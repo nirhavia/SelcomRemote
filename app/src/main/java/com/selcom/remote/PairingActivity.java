@@ -7,140 +7,123 @@ import androidx.appcompat.app.AppCompatActivity;
 import javax.net.ssl.SSLContext;
 import java.util.concurrent.*;
 public class PairingActivity extends AppCompatActivity {
-    public static final String EXTRA_HOST = "host";
+    public static final String EXTRA_HOST="host";
     private String host;
-    private final StringBuilder code = new StringBuilder();
-    private TextView tvCode, tvHint;
+    private final StringBuilder code=new StringBuilder();
+    private TextView tvCode;
     private Button btnPair;
     private ProgressBar progress;
     private View keyboardArea;
     private volatile RemoteProtocol rp;
-    private final ExecutorService ex = Executors.newSingleThreadExecutor();
-    private final Handler mh = new Handler(Looper.getMainLooper());
+    private final ExecutorService ex=Executors.newSingleThreadExecutor();
+    private final Handler mh=new Handler(Looper.getMainLooper());
 
-    @Override protected void onCreate(Bundle b) {
-        super.onCreate(b);
-        setContentView(R.layout.activity_pairing);
-        host = getIntent().getStringExtra(EXTRA_HOST);
-        if (host == null) { finish(); return; }
-        tvCode       = findViewById(R.id.tv_pairing_code);
-        btnPair      = findViewById(R.id.btn_submit_pair);
-        progress     = findViewById(R.id.pairing_progress);
-        keyboardArea = findViewById(R.id.keyboard_scroll);
-        buildKeyboard(); updateDisplay();
-        // Step 1-3: connect and wait for TV to show code
-        startPairingHandshake();
-        btnPair.setOnClickListener(v -> { if (code.length() == 6) doSendSecret(); });
-        findViewById(R.id.btn_delete).setOnClickListener(v -> {
-            if (code.length() > 0) { code.deleteCharAt(code.length()-1); updateDisplay(); }
+    @Override protected void onCreate(Bundle b){
+        super.onCreate(b);setContentView(R.layout.activity_pairing);
+        host=getIntent().getStringExtra(EXTRA_HOST);
+        if(host==null){finish();return;}
+        tvCode=findViewById(R.id.tv_pairing_code);
+        btnPair=findViewById(R.id.btn_submit_pair);
+        progress=findViewById(R.id.pairing_progress);
+        keyboardArea=findViewById(R.id.keyboard_scroll);
+        buildKeyboard();updateDisplay();
+        btnPair.setOnClickListener(v->{if(code.length()==6)doSendSecret();});
+        findViewById(R.id.btn_delete).setOnClickListener(v->{
+            if(code.length()>0){code.deleteCharAt(code.length()-1);updateDisplay();}
         });
+        startHandshake();
     }
 
-    // Steps 1-3: connect → options → config → TV shows code
-    private void startPairingHandshake() {
+    private void startHandshake(){
         progress.setVisibility(View.VISIBLE);
-        ex.submit(() -> {
-            try {
+        keyboardArea.setVisibility(View.GONE);
+        ex.submit(()->{
+            try{
                 CertUtils.ensureKeyExists();
-                SSLContext ssl = CertUtils.createSSLContext();
-                rp = new RemoteProtocol(ssl);
+                SSLContext ssl=CertUtils.createSSLContext();
+                rp=new RemoteProtocol(ssl);
                 rp.connectForPairing(host);
-                rp.sendPairingRequest("androidtvremote2", "SelcomRemote");
-                rp.readAndDiscard();   // PairingRequestAck
+                rp.sendPairingRequest("androidtvremote2","SelcomRemote");
+                rp.readAndDiscard();
                 rp.sendPairingOptions();
-                rp.readAndDiscard();   // PairingOptionsAck
+                rp.readAndDiscard();
                 rp.sendPairingConfig();
-                rp.readAndDiscard();   // PairingConfigAck  → TV now shows code
-                mh.post(() -> {
+                rp.readAndDiscard(); // after this ack, TV shows code
+                mh.post(()->{
                     progress.setVisibility(View.GONE);
                     keyboardArea.setVisibility(View.VISIBLE);
-                    Toast.makeText(this, "הסתכל על הטלוויזיה – הזן את הקוד", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this,"הטלוויזיה מציגה קוד – הזן אותו",Toast.LENGTH_LONG).show();
                 });
-            } catch (Exception e) {
-                mh.post(() -> {
+            }catch(Exception e){
+                mh.post(()->{
                     progress.setVisibility(View.GONE);
-                    Toast.makeText(this, "שגיאת חיבור: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(this,"שגיאת חיבור: "+e.getMessage(),Toast.LENGTH_LONG).show();
                     finish();
                 });
             }
         });
     }
 
-    // Step 5: send secret after user enters code
-    private void doSendSecret() {
-        String pc = code.toString().toUpperCase();
-        progress.setVisibility(View.VISIBLE);
-        keyboardArea.setVisibility(View.GONE);
-        btnPair.setEnabled(false);
-        ex.submit(() -> {
-            try {
-                boolean ok = rp.sendPairingSecret(pc);
-                mh.post(() -> {
+    private void doSendSecret(){
+        String pc=code.toString().toUpperCase();
+        progress.setVisibility(View.VISIBLE);keyboardArea.setVisibility(View.GONE);btnPair.setEnabled(false);
+        ex.submit(()->{
+            try{
+                boolean ok=rp.sendPairingSecret(pc);
+                mh.post(()->{
                     progress.setVisibility(View.GONE);
-                    if (ok) {
-                        getSharedPreferences(RemoteService.PREF_FILE, MODE_PRIVATE).edit()
-                            .putBoolean(RemoteService.PREF_PAIRED, true)
-                            .putString(RemoteService.PREF_HOST, host).apply();
-                        Toast.makeText(this, "הצימוד הצליח!", Toast.LENGTH_SHORT).show();
-                        startService(new Intent(this, RemoteService.class)
+                    if(ok){
+                        getSharedPreferences(RemoteService.PREF_FILE,MODE_PRIVATE).edit()
+                            .putBoolean(RemoteService.PREF_PAIRED,true)
+                            .putString(RemoteService.PREF_HOST,host).apply();
+                        Toast.makeText(this,"הצימוד הצליח!",Toast.LENGTH_SHORT).show();
+                        startService(new Intent(this,RemoteService.class)
                             .setAction(RemoteService.ACTION_CONNECT)
-                            .putExtra(RemoteService.EXTRA_HOST, host));
-                        startActivity(new Intent(this, MainActivity.class)
-                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+                            .putExtra(RemoteService.EXTRA_HOST,host));
+                        startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
                         finish();
-                    } else {
-                        code.setLength(0); updateDisplay();
+                    }else{
+                        code.setLength(0);updateDisplay();
                         keyboardArea.setVisibility(View.VISIBLE);
-                        Toast.makeText(this, "קוד שגוי - נסה שוב", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this,"קוד שגוי - נסה שוב",Toast.LENGTH_SHORT).show();
                     }
                 });
-            } catch (Exception e) {
-                mh.post(() -> {
+            }catch(Exception e){
+                mh.post(()->{
                     progress.setVisibility(View.GONE);
                     keyboardArea.setVisibility(View.VISIBLE);
-                    Toast.makeText(this, "שגיאה: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(this,"שגיאה: "+e.getMessage(),Toast.LENGTH_LONG).show();
                 });
             }
         });
     }
 
-    private void buildKeyboard() {
-        LinearLayout container = findViewById(R.id.keyboard_container);
-        float dp = getResources().getDisplayMetrics().density;
-        int h = (int)(58 * dp);
-        String[] rows = { "1234567890", "ABCDEF" };
-        for (String row : rows) {
-            LinearLayout rl = new LinearLayout(this);
+    private void buildKeyboard(){
+        LinearLayout container=findViewById(R.id.keyboard_container);
+        float dp=getResources().getDisplayMetrics().density;
+        int h=(int)(58*dp);
+        String[] rows={"1234567890","ABCDEF"};
+        for(String row:rows){
+            LinearLayout rl=new LinearLayout(this);
             rl.setOrientation(LinearLayout.HORIZONTAL);
-            rl.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            rl.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.WRAP_CONTENT));
             rl.setGravity(Gravity.CENTER);
-            for (char c : row.toCharArray()) {
-                Button btn = new Button(this);
-                btn.setText(String.valueOf(c));
-                btn.setTextSize(20f);
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, h);
-                lp.weight = 1; lp.setMargins(3, 3, 3, 3);
+            for(char c:row.toCharArray()){
+                Button btn=new Button(this);btn.setText(String.valueOf(c));btn.setTextSize(20f);
+                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,h);lp.weight=1;lp.setMargins(3,3,3,3);
                 btn.setLayoutParams(lp);
-                btn.setOnClickListener(v -> {
-                    if (code.length() < 6) { code.append(c); updateDisplay(); }
-                });
+                btn.setOnClickListener(v->{if(code.length()<6){code.append(c);updateDisplay();}});
                 rl.addView(btn);
             }
             container.addView(rl);
         }
     }
 
-    private void updateDisplay() {
-        StringBuilder d = new StringBuilder(code);
-        for (int i = code.length(); i < 6; i++) d.append('_');
-        tvCode.setText(d.toString());
-        btnPair.setEnabled(code.length() == 6);
+    private void updateDisplay(){
+        StringBuilder d=new StringBuilder(code);
+        for(int i=code.length();i<6;i++)d.append('_');
+        tvCode.setText(d.toString());btnPair.setEnabled(code.length()==6);
     }
 
-    @Override protected void onDestroy() {
-        super.onDestroy();
-        ex.shutdownNow();
-        if (rp != null) rp.close();
-    }
+    @Override protected void onDestroy(){super.onDestroy();ex.shutdownNow();if(rp!=null)rp.close();}
 }
