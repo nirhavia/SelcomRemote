@@ -1,41 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
-    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
     android:padding="16dp" android:background="#1a1a2e">
-
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="צימוד עם הטלוויזיה" android:textColor="#ffffff"
         android:textSize="20sp" android:gravity="center" android:layout_marginBottom="8dp"/>
-
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="הקלד את הקוד המוצג על המסך (6 תווים):"
-        android:textColor="#aaaaaa" android:gravity="center" android:layout_marginBottom="12dp"/>
-
-    <TextView android:id="@+id/tv_pairing_code"
-        android:layout_width="match_parent" android:layout_height="70dp"
-        android:gravity="center" android:textSize="38sp" android:textColor="#00d4ff"
-        android:background="#222244" android:letterSpacing="0.4"
+        android:text="הקלד קוד 6 תווים:" android:textColor="#aaaaaa"
+        android:gravity="center" android:layout_marginBottom="12dp"/>
+    <TextView android:id="@+id/tv_pairing_code" android:layout_width="match_parent"
+        android:layout_height="70dp" android:gravity="center" android:textSize="38sp"
+        android:textColor="#00d4ff" android:background="#222244" android:letterSpacing="0.4"
         android:fontFamily="monospace" android:text="______" android:layout_marginBottom="12dp"/>
-
-    <ProgressBar android:id="@+id/pairing_progress"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_gravity="center" android:visibility="gone" android:layout_marginBottom="8dp"/>
-
-    <ScrollView android:id="@+id/keyboard_scroll"
-        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
-        <LinearLayout android:id="@+id/keyboard_container"
-            android:orientation="vertical"
+    <ProgressBar android:id="@+id/pairing_progress" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:layout_gravity="center"
+        android:visibility="gone" android:layout_marginBottom="8dp"/>
+    <ScrollView android:id="@+id/keyboard_scroll" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1">
+        <LinearLayout android:id="@+id/keyboard_container" android:orientation="vertical"
             android:layout_width="match_parent" android:layout_height="wrap_content"/>
     </ScrollView>
-
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:layout_marginTop="8dp">
-        <Button android:id="@+id/btn_delete"
-            android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1"
-            android:text="מחק" android:backgroundTint="#7f1d1d" android:layout_marginEnd="8dp"/>
-        <Button android:id="@+id/btn_submit_pair"
-            android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="2"
-            android:text="אשר צימוד" android:backgroundTint="#1b5e20" android:enabled="false"/>
+        <Button android:id="@+id/btn_delete" android:layout_width="0dp" android:layout_height="52dp"
+            android:layout_weight="1" android:text="מחק" android:backgroundTint="#7f1d1d"
+            android:layout_marginEnd="8dp"/>
+        <Button android:id="@+id/btn_submit_pair" android:layout_width="0dp" android:layout_height="52dp"
+            android:layout_weight="2" android:text="אשר צימוד" android:backgroundTint="#1b5e20"
+            android:enabled="false"/>
     </LinearLayout>
 </LinearLayout>
