@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
-    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
     android:background="#CC1a1a2e" android:padding="4dp">
-
     <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
         <Button android:id="@+id/w_btn_1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="1" android:textSize="22sp" android:textColor="#ffffff" android:backgroundTint="#16213e" android:layout_margin="2dp"/>
         <Button android:id="@+id/w_btn_2" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="2" android:textSize="22sp" android:textColor="#ffffff" android:backgroundTint="#16213e" android:layout_margin="2dp"/>
@@ -21,6 +19,6 @@
     </LinearLayout>
     <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
         <Button android:id="@+id/w_btn_last_ch" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="קודם" android:textSize="16sp" android:textColor="#ffffff" android:backgroundTint="#6c3483" android:layout_margin="2dp"/>
-        <Button android:id="@+id/w_btn_0"       android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2" android:text="0"     android:textSize="22sp" android:textColor="#ffffff" android:backgroundTint="#16213e" android:layout_margin="2dp"/>
+        <Button android:id="@+id/w_btn_0" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2" android:text="0" android:textSize="22sp" android:textColor="#ffffff" android:backgroundTint="#16213e" android:layout_margin="2dp"/>
     </LinearLayout>
 </LinearLayout>
