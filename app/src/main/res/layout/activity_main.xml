@@ -1,36 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#1a1a2e">
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="12dp">
-
-        <TextView android:id="@+id/tv_status"
-            android:layout_width="match_parent" android:layout_height="40dp"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:background="#1a1a2e">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="12dp">
+        <TextView android:id="@+id/tv_status" android:layout_width="match_parent" android:layout_height="40dp"
             android:gravity="center" android:textColor="#00d4ff" android:textSize="14sp"
             android:text="מנותק" android:background="#222244" android:layout_marginBottom="8dp"/>
-
-        <Button android:id="@+id/btn_find_device"
-            android:layout_width="match_parent" android:layout_height="48dp"
-            android:text="חפש / חבר מכשיר"
-            android:backgroundTint="#0056b3" android:layout_marginBottom="12dp"/>
-
-        <!-- Channel row -->
+        <Button android:id="@+id/btn_find_device" android:layout_width="match_parent" android:layout_height="48dp"
+            android:text="חפש / חבר מכשיר" android:backgroundTint="#0056b3" android:layout_marginBottom="12dp"/>
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:gravity="center" android:layout_marginBottom="6dp">
-            <Button android:id="@+id/btn_ch_up"   android:layout_width="0dp" android:layout_height="54dp" android:layout_weight="1" android:text="CH  +" android:layout_marginEnd="4dp" android:backgroundTint="#2c3e50"/>
-            <Button android:id="@+id/btn_last_ch" android:layout_width="0dp" android:layout_height="54dp" android:layout_weight="1" android:text="ערוץ קודם" android:layout_marginEnd="4dp" android:backgroundTint="#6c3483"/>
-            <Button android:id="@+id/btn_ch_down" android:layout_width="0dp" android:layout_height="54dp" android:layout_weight="1" android:text="CH  -" android:backgroundTint="#2c3e50"/>
+            android:orientation="horizontal" android:layout_marginBottom="6dp">
+            <Button android:id="@+id/btn_ch_up" android:layout_width="0dp" android:layout_height="54dp" android:layout_weight="1" android:text="CH +" android:backgroundTint="#2c3e50" android:layout_marginEnd="4dp"/>
+            <Button android:id="@+id/btn_last_ch" android:layout_width="0dp" android:layout_height="54dp" android:layout_weight="1" android:text="ערוץ קודם" android:backgroundTint="#6c3483" android:layout_marginEnd="4dp"/>
+            <Button android:id="@+id/btn_ch_down" android:layout_width="0dp" android:layout_height="54dp" android:layout_weight="1" android:text="CH -" android:backgroundTint="#2c3e50"/>
         </LinearLayout>
-
-        <!-- Digit pad 3x4 -->
         <GridLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:columnCount="3" android:rowCount="4" android:layout_marginBottom="10dp">
+            android:columnCount="3" android:layout_marginBottom="10dp">
             <Button android:id="@+id/btn_1" android:layout_width="0dp" android:layout_height="60dp" android:layout_columnWeight="1" android:text="1" android:textSize="22sp" android:backgroundTint="#16213e" android:layout_margin="3dp"/>
             <Button android:id="@+id/btn_2" android:layout_width="0dp" android:layout_height="60dp" android:layout_columnWeight="1" android:text="2" android:textSize="22sp" android:backgroundTint="#16213e" android:layout_margin="3dp"/>
             <Button android:id="@+id/btn_3" android:layout_width="0dp" android:layout_height="60dp" android:layout_columnWeight="1" android:text="3" android:textSize="22sp" android:backgroundTint="#16213e" android:layout_margin="3dp"/>
@@ -41,49 +26,34 @@
             <Button android:id="@+id/btn_8" android:layout_width="0dp" android:layout_height="60dp" android:layout_columnWeight="1" android:text="8" android:textSize="22sp" android:backgroundTint="#16213e" android:layout_margin="3dp"/>
             <Button android:id="@+id/btn_9" android:layout_width="0dp" android:layout_height="60dp" android:layout_columnWeight="1" android:text="9" android:textSize="22sp" android:backgroundTint="#16213e" android:layout_margin="3dp"/>
             <Button android:id="@+id/btn_mute" android:layout_width="0dp" android:layout_height="60dp" android:layout_columnWeight="1" android:text="MUTE" android:backgroundTint="#7f1d1d" android:layout_margin="3dp"/>
-            <Button android:id="@+id/btn_0"   android:layout_width="0dp" android:layout_height="60dp" android:layout_columnWeight="1" android:text="0" android:textSize="22sp" android:backgroundTint="#16213e" android:layout_margin="3dp"/>
+            <Button android:id="@+id/btn_0" android:layout_width="0dp" android:layout_height="60dp" android:layout_columnWeight="1" android:text="0" android:textSize="22sp" android:backgroundTint="#16213e" android:layout_margin="3dp"/>
             <Button android:id="@+id/btn_info" android:layout_width="0dp" android:layout_height="60dp" android:layout_columnWeight="1" android:text="INFO" android:backgroundTint="#2c3e50" android:layout_margin="3dp"/>
         </GridLayout>
-
-        <!-- D-Pad -->
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="vertical" android:gravity="center" android:layout_marginBottom="8dp">
-            <Button android:id="@+id/btn_up"
-                android:layout_width="80dp" android:layout_height="54dp"
-                android:text="UP" android:backgroundTint="#2c3e50"/>
+            <Button android:id="@+id/btn_up" android:layout_width="80dp" android:layout_height="54dp" android:text="UP" android:backgroundTint="#2c3e50"/>
             <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
-                <Button android:id="@+id/btn_left"  android:layout_width="80dp" android:layout_height="54dp" android:text="LEFT"  android:backgroundTint="#2c3e50" android:layout_marginEnd="4dp"/>
-                <Button android:id="@+id/btn_ok"    android:layout_width="80dp" android:layout_height="54dp" android:text="OK"    android:backgroundTint="#00695c" android:layout_marginEnd="4dp"/>
+                <Button android:id="@+id/btn_left" android:layout_width="80dp" android:layout_height="54dp" android:text="LEFT" android:backgroundTint="#2c3e50" android:layout_marginEnd="4dp"/>
+                <Button android:id="@+id/btn_ok" android:layout_width="80dp" android:layout_height="54dp" android:text="OK" android:backgroundTint="#00695c" android:layout_marginEnd="4dp"/>
                 <Button android:id="@+id/btn_right" android:layout_width="80dp" android:layout_height="54dp" android:text="RIGHT" android:backgroundTint="#2c3e50"/>
             </LinearLayout>
-            <Button android:id="@+id/btn_down"
-                android:layout_width="80dp" android:layout_height="54dp"
-                android:text="DOWN" android:backgroundTint="#2c3e50"/>
+            <Button android:id="@+id/btn_down" android:layout_width="80dp" android:layout_height="54dp" android:text="DOWN" android:backgroundTint="#2c3e50"/>
         </LinearLayout>
-
-        <!-- System row -->
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:layout_marginBottom="6dp">
-            <Button android:id="@+id/btn_back"  android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="BACK"  android:backgroundTint="#2c3e50" android:layout_marginEnd="4dp"/>
-            <Button android:id="@+id/btn_home"  android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="HOME"  android:backgroundTint="#2c3e50" android:layout_marginEnd="4dp"/>
-            <Button android:id="@+id/btn_menu"  android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="MENU"  android:backgroundTint="#2c3e50"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="6dp">
+            <Button android:id="@+id/btn_back" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="BACK" android:backgroundTint="#2c3e50" android:layout_marginEnd="4dp"/>
+            <Button android:id="@+id/btn_home" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="HOME" android:backgroundTint="#2c3e50" android:layout_marginEnd="4dp"/>
+            <Button android:id="@+id/btn_menu" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="MENU" android:backgroundTint="#2c3e50"/>
         </LinearLayout>
-
-        <!-- VOL row -->
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:layout_marginBottom="6dp">
-            <Button android:id="@+id/btn_vol_down" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="VOL -" android:backgroundTint="#1b4f72" android:layout_marginEnd="4dp"/>
-            <Button android:id="@+id/btn_guide"    android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="GUIDE" android:backgroundTint="#1b4f72" android:layout_marginEnd="4dp"/>
-            <Button android:id="@+id/btn_vol_up"   android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="VOL +" android:backgroundTint="#1b4f72"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="6dp">
+            <Button android:id="@+id/btn_vol_down" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="VOL-" android:backgroundTint="#1b4f72" android:layout_marginEnd="4dp"/>
+            <Button android:id="@+id/btn_guide" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="GUIDE" android:backgroundTint="#1b4f72" android:layout_marginEnd="4dp"/>
+            <Button android:id="@+id/btn_vol_up" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="VOL+" android:backgroundTint="#1b4f72"/>
         </LinearLayout>
-
-        <!-- Media row -->
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
-            <Button android:id="@+id/btn_rewind"     android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="REW"  android:backgroundTint="#1b4f72" android:layout_marginEnd="3dp"/>
+            <Button android:id="@+id/btn_rewind" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="REW" android:backgroundTint="#1b4f72" android:layout_marginEnd="3dp"/>
             <Button android:id="@+id/btn_play_pause" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="PLAY" android:backgroundTint="#1b5e20" android:layout_marginEnd="3dp"/>
-            <Button android:id="@+id/btn_stop"       android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="STOP" android:backgroundTint="#7f1d1d" android:layout_marginEnd="3dp"/>
-            <Button android:id="@+id/btn_ff"         android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="FF"   android:backgroundTint="#1b4f72"/>
+            <Button android:id="@+id/btn_stop" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="STOP" android:backgroundTint="#7f1d1d" android:layout_marginEnd="3dp"/>
+            <Button android:id="@+id/btn_ff" android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1" android:text="FF" android:backgroundTint="#1b4f72"/>
         </LinearLayout>
-
     </LinearLayout>
 </ScrollView>
