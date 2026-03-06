@@ -101,8 +101,9 @@ public class RemoteService extends Service {
     private void postForeground(String s){
         Notification n=buildNotif(s);
         if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.Q)
-            startForeground(NOTIF_ID,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
-        else startForeground(NOTIF_ID,n);
+            startForeground(NOTIF_ID,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        else
+            startForeground(NOTIF_ID,n);
     }
     private void updateNotif(String s){
         NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
