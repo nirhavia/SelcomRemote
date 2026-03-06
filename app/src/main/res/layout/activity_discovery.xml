@@ -1,31 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
-    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
     android:padding="16dp" android:background="#1a1a2e">
-
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="חיפוש מכשירים ברשת" android:textColor="#ffffff"
-        android:textSize="20sp" android:gravity="center" android:layout_marginBottom="16dp"/>
-
-    <ProgressBar android:id="@+id/discovery_progress"
-        style="?android:attr/progressBarStyleHorizontal"
+        android:text="חיפוש מכשירים" android:textColor="#ffffff" android:textSize="20sp"
+        android:gravity="center" android:layout_marginBottom="16dp"/>
+    <ProgressBar android:id="@+id/discovery_progress" style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent" android:layout_height="wrap_content"
         android:indeterminate="true" android:layout_marginBottom="12dp"/>
-
-    <ListView android:id="@+id/device_list"
-        android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:dividerHeight="1dp"/>
-
+    <ListView android:id="@+id/device_list" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1" android:dividerHeight="1dp"/>
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="או הזן IP ידנית:" android:textColor="#aaaaaa"
-        android:layout_marginTop="16dp" android:layout_marginBottom="4dp"/>
-
-    <EditText android:id="@+id/et_manual_ip"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:hint="192.168.1.x" android:textColor="#ffffff" android:inputType="text"/>
-
-    <Button android:id="@+id/btn_manual_connect"
-        android:layout_width="match_parent" android:layout_height="52dp"
-        android:text="חבר ידנית" android:backgroundTint="#0056b3" android:layout_marginTop="8dp"/>
+        android:text="או IP ידנית:" android:textColor="#aaaaaa" android:layout_marginTop="16dp"/>
+    <EditText android:id="@+id/et_manual_ip" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:hint="192.168.1.x" android:textColor="#ffffff"
+        android:inputType="text"/>
+    <Button android:id="@+id/btn_manual_connect" android:layout_width="match_parent"
+        android:layout_height="52dp" android:text="חבר ידנית" android:backgroundTint="#0056b3"
+        android:layout_marginTop="8dp"/>
 </LinearLayout>
