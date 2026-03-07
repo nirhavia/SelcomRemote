@@ -1,206 +1,133 @@
 package com.selcom.remote;
-import android.util.Base64;
 import android.util.Log;
 import java.io.*;
-import java.net.InetSocketAddress;
-import java.security.*;
-import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
-import java.security.interfaces.RSAPublicKey;
-import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.MessageDigest;
+import java.security.cert.Certificate;
 import javax.net.ssl.*;
-
 public class RemoteProtocol implements Closeable {
-    private static final String TAG = "RemoteProtocol";
-    public  static final int PORT_PAIRING = 6467;
-    public  static final int PORT_REMOTE  = 6466;
-
-    private static final String KEY_B64 =
-        "MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDKeTyySZZ3B5tL7AxBwpUF"
-        + "txM8vtVALKI1wtKdbSqzK4+TtMzZPXpBwkFc0zJleSBIBLoiBrQ6FIZkW2uv0MELSMsCU+8f"
-        + "fhYN9C7R/bwE+FL+Q1idRPzFmpapJTlMCEKGqWraI848ciK3fJ65j4KuCLEAw6Y1pqQwBDyB"
-        + "LAzBE6vi3IvO4L7CubS9ChQd9ShAGZQM7KdXgDY9jRCghOfZPuK3FudR1AdzjKikdpilf4UE"
-        + "RzYFGD5DWUwdpDsGLxBErF5Q85TlJ6brh2AzY0rQf2eeGgh5tjwQUvgQP0LjHbz9nM+d4bZC"
-        + "tQ1hHniEuW+oD/MxeQhw6qjkQvCdupOlAgMBAAECggEACXhOrbMR6crOCWjGsPuyHySPLofp"
-        + "bvk3dAbC9ZCBzwQCUOEDtMRyl6lHh9kr8gGOkDfCYe2I1++WUpLREFXV9ZpnvlnhJQqvauMp"
-        + "HnK87MmVjiVlu2Na5D4k/k/KpIL9Y5GAeSf0ETEwbP8T6G9tKAkpiDTebQN4ifNkxhDintQg"
-        + "hMTFHzPhGd5BFPcyQfPCMc0np000v7iLNrJZGcjZ/1hdnXcQrnmcNnnrfZXRY1fKo/UQ5aoB"
-        + "56Ybr16YLiJRlsDNfXzFiXXT+7tfYHfjobsjZNJxmwddkE9v0mezNT6nspkcPWr45P5Y/BJ4"
-        + "a0yEEDrasWi6ctksDqyWBk+/eQKBgQD/voMjSpqP7KIFYuOuboqVuOCWdBM5s0Dm3IfM9K0g"
-        + "wyBDqaEa/voWgu/fNaCpi9Rcy24ProUAb9oeWBXY7j/C4K4VT0qxqq2NtMZKfnfp0+2Yal41"
-        + "D6Noo3TQQw9DQCkN6ThgzmB/GYyAJ6Zf3/1Qne5rV5bomdnYpuzN6B2kHQKBgQDKrRV/Ua8I"
-        + "q1gPS22Dl7zoYOalku5ttdhMKhULiXAcFxITgpPUwWc8aTh3CwyOZSx2pPw9LoQT0zQRu5gm"
-        + "huMRwOozLzI/+bM1NTihTCrH2TLRxgbp3J6KtYxcThgKajJYU4a1jAa7mbgJENeJLkriSAty"
-        + "aDPbhFUIoFVuEjCHKQKBgQDCTHyXUHPTSuXhj7sJaERz8ez3gaKloNF7VCr8hRwPmw+lOHgE"
-        + "6ZkZh0s02yqABZNHGOs6kM3Ngi1GBog6su/QYCECYaaPCuwmkCRirmjuRqvps051o7bzpdP2"
-        + "8ivjXRiT0A+cRM89YSzEpNsbVjK/j+12siod991xY4jf+yyh5QKBgQCeH/oEsnsIHX5/uE6B"
-        + "+5G0D14D0iXZTKWrjq2KqbjhAZLly9uAg0ADHuih3+n08rSFAGWXakI7oW0fZKfpbxWblVJj"
-        + "iq/+v9b0bUh4d49tCmUeyww7yxeaitgub/NLtN0AknIoFE5wcRbnY891RLvB3Ymowemrm4wo"
-        + "RcdBMEnSOQKBgQCZ1eK3iQt1IYSUqQw1ebvf+icho1+tUr1RaMUl6h0wDJEpz1qZMhREY9DW"
-        + "R0a9jcJ6M05QJ4dbLPfUCFL695u3JKPMHML6bDEtGgivKNxoZT1lbPq5lNqjitNzzfmn8nI0"
-        + "P4cwq//PUZdE4rp0P4oHMm5hS8BoGC9BR+Qg01lGlg==";
-    private static final String CERT_B64 =
-        "MIICszCCAZugAwIBAgITVy8c46h9+P5xuSE/o4HxoNAuJTANBgkqhkiG9w0BAQsFADAUMRIw"
-        + "EAYDVQQDDAlhdHZyZW1vdGUwHhcNMjMwMTAxMDAwMDAwWhcNMzUwMTAxMDAwMDAwWjAUMRIw"
-        + "EAYDVQQDDAlhdHZyZW1vdGUwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDKeTyy"
-        + "SZZ3B5tL7AxBwpUFtxM8vtVALKI1wtKdbSqzK4+TtMzZPXpBwkFc0zJleSBIBLoiBrQ6FIZk"
-        + "W2uv0MELSMsCU+8ffhYN9C7R/bwE+FL+Q1idRPzFmpapJTlMCEKGqWraI848ciK3fJ65j4Ku"
-        + "CLEAw6Y1pqQwBDyBLAzBE6vi3IvO4L7CubS9ChQd9ShAGZQM7KdXgDY9jRCghOfZPuK3FudR"
-        + "1AdzjKikdpilf4UERzYFGD5DWUwdpDsGLxBErF5Q85TlJ6brh2AzY0rQf2eeGgh5tjwQUvgQ"
-        + "P0LjHbz9nM+d4bZCtQ1hHniEuW+oD/MxeQhw6qjkQvCdupOlAgMBAAEwDQYJKoZIhvcNAQEL"
-        + "BQADggEBAAeu5fiATvFbBGhpqU1lvQrEjUxLCUh0mXcE3Bs8BpqwcHhwYv/TfCs3ktPxePCD"
-        + "FLklNT+KHbOXQn4GLu6nUT7AM0HL3H17FZNVgPrUc5iQwKFH4ZqfPNvWApyo/0JPA41zY6Bl"
-        + "hKWMSgxzY9+wwJoGp+G11aRvI9hchCWC8rKNh57MLR4SqFaW1+VNSLWbSg8vsa1QiHJn9i2J"
-        + "nmCsqPVcHMF1UzVYr4r9kkrgvhehmdADmEV6DmdMgL/gesuhUE9gy9gGXf23WQWOjKtptgQs"
-        + "PHH3OQnVBNYV03hr0H+Tsz49czPOX31bgPdhC+Hp/gtpljunWBV7gIgJj2Z84fg==";
-
-    private SSLSocket sock;
-    private InputStream  in;
-    private OutputStream out;
-    private X509Certificate clientCert;
-
-    public RemoteProtocol() {}
-
-    private SSLContext buildSSLContext() throws Exception {
-        byte[] keyBytes  = Base64.decode(KEY_B64.replaceAll("\\s",""), Base64.DEFAULT);
-        byte[] certBytes = Base64.decode(CERT_B64.replaceAll("\\s",""), Base64.DEFAULT);
-        PrivateKey privKey = KeyFactory.getInstance("RSA")
-            .generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
-        clientCert = (X509Certificate) CertificateFactory.getInstance("X.509")
-            .generateCertificate(new ByteArrayInputStream(certBytes));
-        KeyStore ks = KeyStore.getInstance("PKCS12");
-        ks.load(null, null);
-        ks.setKeyEntry("k", privKey, new char[0], new X509Certificate[]{clientCert});
-        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        kmf.init(ks, new char[0]);
-        SSLContext ssl = SSLContext.getInstance("TLS");
-        ssl.init(kmf.getKeyManagers(), new TrustManager[]{new X509TrustManager() {
-            public void checkClientTrusted(X509Certificate[] c, String a) {}
-            public void checkServerTrusted(X509Certificate[] c, String a) {}
-            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-        }}, new SecureRandom());
-        return ssl;
+    private static final String TAG="RemoteProtocol";
+    public static final int PORT_PAIRING=6467,PORT_REMOTE=6466;
+    private static final int MSG_PAIRING_REQUEST=10,MSG_PAIRING_OPTIONS=20,MSG_PAIRING_SECRET=40;
+    public static final int DIR_SHORT=4;
+    private static final int FLD_PING_RESPONSE=2,FLD_SET_ACTIVE=3,FLD_KEY_INJECT=4;
+    private SSLSocket socket; private InputStream in; private OutputStream out;
+    private final SSLContext sslContext;
+    public RemoteProtocol(SSLContext ctx){this.sslContext=ctx;}
+    public void connectForPairing(String host) throws IOException{connect(host,PORT_PAIRING,12000);}
+    public void connectForRemote(String host) throws IOException{connect(host,PORT_REMOTE,35000);}
+    private void connect(String host,int port,int timeout) throws IOException{
+        Log.d(TAG,"Connecting "+host+":"+port);
+        SSLSocketFactory f=sslContext.getSocketFactory();
+        socket=(SSLSocket)f.createSocket(host,port);
+        socket.setSoTimeout(timeout); socket.startHandshake();
+        in=socket.getInputStream(); out=socket.getOutputStream(); Log.d(TAG,"Connected");
     }
-
-    private void openSocket(String host, int port, int timeoutMs) throws Exception {
-        SSLContext ssl = buildSSLContext();
-        sock = (SSLSocket) ssl.getSocketFactory().createSocket();
-        sock.setEnabledProtocols(sock.getSupportedProtocols());
-        sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
-        sock.connect(new InetSocketAddress(host, port), timeoutMs);
-        sock.setSoTimeout(60000);
-        sock.startHandshake();
-        in  = sock.getInputStream();
-        out = sock.getOutputStream();
-        Log.d(TAG, "Connected port=" + port + " tls=" + sock.getSession().getProtocol());
+    public void sendPairingRequest(String sn,String cn) throws IOException{
+        byte[] req=msg(strField(1,sn),strField(2,cn));
+        sendFramed(msg(varintField(1,MSG_PAIRING_REQUEST),lenField(10,req)));
     }
-
-    public void connectForPairing(String host) throws Exception { openSocket(host, PORT_PAIRING, 5000); }
-    public void connectForRemote(String host)  throws Exception { openSocket(host, PORT_REMOTE,  5000); sock.setSoTimeout(35000); }
-
-    // Step 1
-    public void sendPairingRequest() throws Exception {
-        byte[] svc = "atvremote".getBytes("UTF-8");
-        byte[] cli = "SelcomRemote".getBytes("UTF-8");
-        ByteArrayOutputStream inner = new ByteArrayOutputStream();
-        inner.write(0x0A); inner.write(svc.length); inner.write(svc);
-        inner.write(0x12); inner.write(cli.length); inner.write(cli);
-        ByteArrayOutputStream msg = new ByteArrayOutputStream();
-        msg.write(new byte[]{8, 2, 16, (byte)200, 1, 82});
-        msg.write(inner.size());
-        msg.write(inner.toByteArray());
-        sendMsg(msg.toByteArray());
-        Log.d(TAG, "-> PairingRequest");
+    public int readPairingMessageType() throws IOException{byte[] d=readFramed();return(int)parseVarintField(d,1);}
+    public void sendPairingOptions() throws IOException{
+        byte[] enc=msg(varintField(3,3),varintField(4,6));
+        byte[] opt=msg(lenField(1,enc),varintField(2,1));
+        sendFramed(msg(varintField(1,MSG_PAIRING_OPTIONS),lenField(21,opt)));
     }
-
-    // Step 2 - exact bytes
-    public void sendPairingOptions() throws Exception {
-        sendMsg(new byte[]{8,2,16,(byte)200,1,(byte)162,1,8,10,4,8,3,16,6,24,1});
-        Log.d(TAG, "-> Options");
+    public boolean sendPairingSecret(String code) throws Exception{
+        Certificate[] lc=socket.getSession().getLocalCertificates();
+        Certificate[] sc=socket.getSession().getPeerCertificates();
+        if(lc==null||lc.length==0)throw new Exception("No local certificate");
+        MessageDigest sha=MessageDigest.getInstance("SHA-256");
+        sha.update(lc[0].getEncoded()); sha.update(sc[0].getEncoded()); sha.update(code.getBytes("UTF-8"));
+        byte[] secret=sha.digest();
+        sendFramed(msg(varintField(1,MSG_PAIRING_SECRET),lenField(40,msg(lenField(1,secret)))));
+        return parseVarintField(readFramed(),200)==200;
     }
-
-    // Step 3 - exact bytes - TV shows code after ack
-    public void sendPairingConfig() throws Exception {
-        sendMsg(new byte[]{8,2,16,(byte)200,1,(byte)242,1,8,10,4,8,3,16,6,16,1});
-        Log.d(TAG, "-> Config");
+    public void sendSetActive(boolean active) throws IOException{
+        sendFramed(msg(lenField(FLD_SET_ACTIVE,msg(varintField(1,active?1:0)))));
     }
-
-    public void readAndDiscard() throws Exception {
-        byte[] d = readMsg();
-        Log.d(TAG, "<- ack " + d.length + "b");
+    public synchronized void sendKeyCode(int kc) throws IOException{
+        sendFramed(msg(lenField(FLD_KEY_INJECT,msg(varintField(1,kc),varintField(2,DIR_SHORT)))));
     }
-
-    // Secret = SHA256(cMod+cExp+sMod+sExp + hexToBytes(last4ofPin))
-    public boolean sendPairingSecret(String pin) throws Exception {
-        X509Certificate srv = (X509Certificate) sock.getSession().getPeerCertificates()[0];
-        RSAPublicKey cPub = (RSAPublicKey) clientCert.getPublicKey();
-        RSAPublicKey sPub = (RSAPublicKey) srv.getPublicKey();
-        String last4 = pin.substring(Math.max(0, pin.length()-4));
-        byte[] pinBytes = hexToBytes(last4);
-        Log.d(TAG, "secret pin=" + pin + " last4=" + last4);
-        MessageDigest sha = MessageDigest.getInstance("SHA-256");
-        sha.update(unsigned(cPub.getModulus()));
-        sha.update(unsigned(cPub.getPublicExponent()));
-        sha.update(unsigned(sPub.getModulus()));
-        sha.update(unsigned(sPub.getPublicExponent()));
-        sha.update(pinBytes);
-        byte[] secret = sha.digest();
-        ByteArrayOutputStream msg = new ByteArrayOutputStream();
-        msg.write(new byte[]{8,2,16,(byte)200,1,(byte)194,2,34,10,32});
-        msg.write(secret);
-        sendMsg(msg.toByteArray());
-        Log.d(TAG, "-> Secret");
-        byte[] ack = readMsg();
-        boolean ok = ack.length >= 5 && (ack[3]&0xFF)==200;
-        Log.d(TAG, "<- SecretAck ok=" + ok);
-        return ok;
+    public void sendPingResponse(int v) throws IOException{
+        sendFramed(msg(lenField(FLD_PING_RESPONSE,msg(varintField(1,v)))));
     }
-
-    public synchronized void sendKeyCode(int kc) throws Exception {
-        sendMsg(new byte[]{82, 5, 8, (byte)kc, 1, 16, 3});
+    public byte[] readRemoteMessage() throws IOException{return readFramed();}
+    public int parseOuterFieldNumber(byte[] data){
+        if(data.length==0)return -1;
+        long tag=0;int shift=0;
+        for(byte b:data){tag|=((long)(b&0x7F))<<shift;shift+=7;if((b&0x80)==0)break;}
+        return(int)(tag>>3);
     }
-
-    public void sendPingResponse(int v) throws Exception {
-        byte[] pong = new byte[]{74, 2, 8, (byte)v};
-        out.write(pong); out.flush();
-        Log.d(TAG, "-> pong");
+    public int parsePingValue(byte[] data){
+        byte[] inner=parseEmbedded(data,1); return inner==null?0:(int)parseVarintField(inner,1);
     }
-
-    public byte[] readRemoteMessage() throws Exception { return readMsg(); }
-
-    public int parseOuterFieldNumber(byte[] d) {
-        return d.length == 0 ? -1 : (d[0]&0xFF) >> 3;
+    private void sendFramed(byte[] data) throws IOException{
+        byte[] f=new byte[2+data.length];
+        f[0]=(byte)((data.length>>8)&0xFF);f[1]=(byte)(data.length&0xFF);
+        System.arraycopy(data,0,f,2,data.length); out.write(f);out.flush();
     }
-
-    public int parsePingValue(byte[] d) {
-        return d.length >= 4 ? d[3]&0xFF : 0;
-    }
-
-    // 1-byte framing
-    private void sendMsg(byte[] msg) throws Exception {
-        out.write(msg.length & 0xFF);
-        out.write(msg); out.flush();
-    }
-
-    private byte[] readMsg() throws Exception {
-        int len = in.read() & 0xFF;
-        byte[] buf = new byte[len]; int r = 0;
-        while (r < len) { int n = in.read(buf, r, len-r); if (n<0) throw new EOFException(); r+=n; }
+    private byte[] readFramed() throws IOException{
+        byte[] lb=new byte[2];int r=0;
+        while(r<2){int n=in.read(lb,r,2-r);if(n<0)throw new EOFException();r+=n;}
+        int len=((lb[0]&0xFF)<<8)|(lb[1]&0xFF);
+        byte[] buf=new byte[len];r=0;
+        while(r<len){int n=in.read(buf,r,len-r);if(n<0)throw new EOFException();r+=n;}
         return buf;
     }
-
-    private static byte[] unsigned(java.math.BigInteger n) {
-        byte[] b = n.abs().toByteArray();
-        if (b[0]==0) { byte[] t=new byte[b.length-1]; System.arraycopy(b,1,t,0,t.length); return t; }
-        return b;
+    private static byte[] msg(byte[]...fields){
+        int t=0;for(byte[] f:fields)t+=f.length;
+        byte[] o=new byte[t];int p=0;
+        for(byte[] f:fields){System.arraycopy(f,0,o,p,f.length);p+=f.length;} return o;
     }
-    private static byte[] hexToBytes(String hex) {
-        byte[] out = new byte[hex.length()/2];
-        for (int i=0; i<hex.length(); i+=2)
-            out[i/2] = (byte) Integer.parseInt(hex.substring(i,i+2),16);
-        return out;
+    private static byte[] varintField(int field,long value){
+        return concat(encodeVarint(((long)field<<3)),encodeVarint(value));
     }
-
-    public boolean isConnected() { return sock!=null && !sock.isClosed() && sock.isConnected(); }
-    @Override public void close() { try { if (sock!=null) sock.close(); } catch (IOException ignored) {} }
+    private static byte[] lenField(int field,byte[] payload){
+        byte[] tag=encodeVarint(((long)field<<3)|2L),len=encodeVarint(payload.length);
+        byte[] o=new byte[tag.length+len.length+payload.length];int p=0;
+        System.arraycopy(tag,0,o,p,tag.length);p+=tag.length;
+        System.arraycopy(len,0,o,p,len.length);p+=len.length;
+        System.arraycopy(payload,0,o,p,payload.length);return o;
+    }
+    private static byte[] strField(int field,String s){
+        try{return lenField(field,s.getBytes("UTF-8"));}catch(Exception e){return new byte[0];}
+    }
+    private static byte[] encodeVarint(long v){
+        byte[] buf=new byte[10];int i=0;
+        while((v&0xFFFFFFFFFFFFFF80L)!=0L){buf[i++]=(byte)((v&0x7F)|0x80);v>>>=7;}
+        buf[i++]=(byte)(v&0x7F);byte[] o=new byte[i];System.arraycopy(buf,0,o,0,i);return o;
+    }
+    private static byte[] concat(byte[] a,byte[] b){
+        byte[] c=new byte[a.length+b.length];
+        System.arraycopy(a,0,c,0,a.length);System.arraycopy(b,0,c,a.length,b.length);return c;
+    }
+    private static long parseVarintField(byte[] data,int tf){
+        int pos=0;
+        while(pos<data.length){
+            long tag=0;int sh=0;
+            while(pos<data.length){byte b=data[pos++];tag|=((long)(b&0x7F))<<sh;sh+=7;if((b&0x80)==0)break;}
+            int fn=(int)(tag>>3),wt=(int)(tag&7);
+            if(wt==0){long v=0;sh=0;while(pos<data.length){byte b=data[pos++];v|=((long)(b&0x7F))<<sh;sh+=7;if((b&0x80)==0)break;}if(fn==tf)return v;}
+            else if(wt==2){long len=0;sh=0;while(pos<data.length){byte b=data[pos++];len|=((long)(b&0x7F))<<sh;sh+=7;if((b&0x80)==0)break;}pos+=(int)len;}
+            else break;
+        }
+        return -1;
+    }
+    private static byte[] parseEmbedded(byte[] data,int tf){
+        int pos=0;
+        while(pos<data.length){
+            long tag=0;int sh=0;
+            while(pos<data.length){byte b=data[pos++];tag|=((long)(b&0x7F))<<sh;sh+=7;if((b&0x80)==0)break;}
+            int fn=(int)(tag>>3),wt=(int)(tag&7);
+            if(wt==0){while(pos<data.length){byte b=data[pos++];if((b&0x80)==0)break;}}
+            else if(wt==2){
+                long len=0;sh=0;while(pos<data.length){byte b=data[pos++];len|=((long)(b&0x7F))<<sh;sh+=7;if((b&0x80)==0)break;}
+                if(fn==tf){byte[] r=new byte[(int)len];System.arraycopy(data,pos,r,0,(int)len);return r;}
+                pos+=(int)len;
+            }else break;
+        }
+        return null;
+    }
+    public boolean isConnected(){return socket!=null&&!socket.isClosed()&&socket.isConnected();}
+    @Override public void close(){try{if(socket!=null)socket.close();}catch(IOException ignored){}}
 }
