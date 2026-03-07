@@ -6,10 +6,30 @@ import java.security.cert.Certificate;
 import java.security.interfaces.RSAPublicKey;
 import javax.net.ssl.*;
 
+/**
+ * Android TV Remote Protocol v2
+ *
+ * IMPORTANT: ports are counter-intuitive:
+ *   6466 = PAIRING port
+ *   6467 = REMOTE CONTROL port
+ *
+ * Pairing flow (port 6466):
+ *   1. sendPairingRequest()
+ *   2. readAndDiscard() ack
+ *   3. sendPairingOptions()
+ *   4. readAndDiscard() ack
+ *   5. sendPairingConfig()    ← TV shows code after this ack
+ *   6. readAndDiscard() ack
+ *   7. user enters 6-char hex code
+ *   8. sendPairingSecret(code) using LAST 4 chars only
+ *
+ * Secret = SHA256(clientMod + clientExp + serverMod + serverExp + hexToBytes(code[2..5]))
+ */
 public class RemoteProtocol implements Closeable {
     private static final String TAG       = "RemoteProtocol";
-    public  static final int PORT_PAIRING = 6467;
-    public  static final int PORT_REMOTE  = 6466;
+    // NOTE: these are intentionally "swapped" vs what you'd expect
+    public  static final int PORT_PAIRING = 6466;  // pairing on 6466
+    public  static final int PORT_REMOTE  = 6467;  // remote control on 6467
     private static final int VERSION      = 2;
     private static final int STATUS_OK    = 200;
     public  static final int DIR_SHORT    = 4;
@@ -32,39 +52,31 @@ public class RemoteProtocol implements Closeable {
         socket.startHandshake();
         in  = socket.getInputStream();
         out = socket.getOutputStream();
-        Log.d(TAG, "Connected OK");
+        Log.d(TAG, "Connected OK on port " + port);
     }
 
-    // Step 1: PairingRequest
-    // field 10 = pairing_request { service_name(1), client_name(2) }
+    // Step 1: [8,2, 16,200,1, 82, len, service_name(1), client_name(2)]
     public void sendPairingRequest(String svc, String client) throws IOException {
         byte[] inner = msg(strField(1, svc), strField(2, client));
         sendFramed(pairingMsg(lenField(10, inner)));
-        Log.d(TAG, "-> PairingRequest");
+        Log.d(TAG, "-> PairingRequest svc=" + svc);
     }
 
-    // Step 2: PairingOptions
-    // field 20 = options {
-    //   field 1 = encoding { field 1=3(HEX), field 2=6(len) }
-    //   field 3 = preferred_role = 1 (INPUT)   ← field 3, NOT field 2!
-    // }
+    // Step 3: Options — preferred_role is field 3
     public void sendPairingOptions() throws IOException {
-        byte[] enc    = msg(varintField(1, 3), varintField(2, 6));
-        byte[] optMsg = msg(lenField(1, enc),  varintField(3, 1)); // field 3!
+        byte[] enc    = msg(varintField(1, 3), varintField(2, 6));  // type=HEX, len=6
+        byte[] optMsg = msg(lenField(1, enc),  varintField(3, 1));  // field 3 = role=INPUT
         sendFramed(pairingMsg(lenField(20, optMsg)));
         Log.d(TAG, "-> PairingOptions");
     }
 
-    // Step 3: PairingConfiguration → TV shows code
-    // field 30 = configuration {
-    //   field 1 = encoding { field 1=3(HEX), field 2=6(len) }
-    //   field 2 = preferred_role = 1 (INPUT)   ← field 2 here
-    // }
+    // Step 5: Config — TV shows code on screen after this ack
+    // preferred_role is field 2 here
     public void sendPairingConfig() throws IOException {
         byte[] enc    = msg(varintField(1, 3), varintField(2, 6));
-        byte[] cfgMsg = msg(lenField(1, enc),  varintField(2, 1)); // field 2
+        byte[] cfgMsg = msg(lenField(1, enc),  varintField(2, 1));  // field 2 = role=INPUT
         sendFramed(pairingMsg(lenField(30, cfgMsg)));
-        Log.d(TAG, "-> PairingConfig  (TV should show code)");
+        Log.d(TAG, "-> PairingConfig  (TV will show code)");
     }
 
     public void readAndDiscard() throws IOException {
@@ -72,15 +84,21 @@ public class RemoteProtocol implements Closeable {
         Log.d(TAG, "<- ack len=" + d.length);
     }
 
-    // Step 5: send secret
-    // secret = SHA256(clientMod + clientExp + serverMod + serverExp + hexToBytes(code))
+    // Step 8: Secret — uses LAST 4 chars of the 6-char hex code
+    // secret = SHA256(clientMod + clientExp + serverMod + serverExp + hexToBytes(code[2..5]))
     public boolean sendPairingSecret(String hexCode) throws Exception {
         Certificate[] lc = socket.getSession().getLocalCertificates();
         Certificate[] sc = socket.getSession().getPeerCertificates();
         if (lc == null || lc.length == 0) throw new Exception("No local cert");
+
         RSAPublicKey ck = (RSAPublicKey) lc[0].getPublicKey();
         RSAPublicKey sk = (RSAPublicKey) sc[0].getPublicKey();
-        byte[] codeBytes = hexStringToBytes(hexCode);
+
+        // Use only last 4 characters of the 6-char code
+        String codeFor = hexCode.length() >= 6 ? hexCode.substring(2, 6) : hexCode;
+        byte[] codeBytes = hexStringToBytes(codeFor);
+        Log.d(TAG, "secret: full code=" + hexCode + " using last4=" + codeFor);
+
         MessageDigest sha = MessageDigest.getInstance("SHA-256");
         sha.update(trim(ck.getModulus().toByteArray()));
         sha.update(trim(ck.getPublicExponent().toByteArray()));
@@ -88,8 +106,10 @@ public class RemoteProtocol implements Closeable {
         sha.update(trim(sk.getPublicExponent().toByteArray()));
         sha.update(codeBytes);
         byte[] secret = sha.digest();
+
         sendFramed(pairingMsg(lenField(40, lenField(1, secret))));
-        Log.d(TAG, "-> PairingSecret code=" + hexCode);
+        Log.d(TAG, "-> PairingSecret");
+
         byte[] ack = readFramed();
         long status = parseVarintField(ack, 2);
         Log.d(TAG, "<- SecretAck status=" + status);
@@ -97,56 +117,53 @@ public class RemoteProtocol implements Closeable {
     }
 
     private static byte[] trim(byte[] b) {
-        int s = 0; while (s < b.length - 1 && b[s] == 0) s++;
-        byte[] r = new byte[b.length - s]; System.arraycopy(b, s, r, 0, r.length); return r;
+        int s=0; while(s<b.length-1&&b[s]==0)s++;
+        byte[] r=new byte[b.length-s]; System.arraycopy(b,s,r,0,r.length); return r;
     }
-
     private static byte[] hexStringToBytes(String hex) throws Exception {
-        hex = hex.toUpperCase().replaceAll("[^0-9A-F]", "");
-        if (hex.length() % 2 != 0) hex = "0" + hex;
-        byte[] r = new byte[hex.length() / 2];
-        for (int i = 0; i < r.length; i++)
-            r[i] = (byte) Integer.parseInt(hex.substring(i*2, i*2+2), 16);
+        hex=hex.toUpperCase().replaceAll("[^0-9A-F]","");
+        if(hex.length()%2!=0)hex="0"+hex;
+        byte[] r=new byte[hex.length()/2];
+        for(int i=0;i<r.length;i++) r[i]=(byte)Integer.parseInt(hex.substring(i*2,i*2+2),16);
         return r;
     }
-
     private static byte[] pairingMsg(byte[] payload) {
         return msg(varintField(1, VERSION), varintField(2, STATUS_OK), payload);
     }
 
     // ── Remote ────────────────────────────────────────────────────────────────
     public void sendSetActive(boolean a) throws IOException {
-        sendFramed(msg(lenField(3, msg(varintField(1, a?1:0)))));
+        sendFramed(msg(lenField(3,msg(varintField(1,a?1:0)))));
     }
     public synchronized void sendKeyCode(int kc) throws IOException {
-        sendFramed(msg(lenField(4, msg(varintField(1, kc), varintField(2, DIR_SHORT)))));
+        sendFramed(msg(lenField(4,msg(varintField(1,kc),varintField(2,DIR_SHORT)))));
     }
     public void sendPingResponse(int v) throws IOException {
-        sendFramed(msg(lenField(2, msg(varintField(1, v)))));
+        sendFramed(msg(lenField(2,msg(varintField(1,v)))));
     }
     public byte[] readRemoteMessage() throws IOException { return readFramed(); }
     public int parseOuterFieldNumber(byte[] data) {
-        if (data.length == 0) return -1;
-        long tag = 0; int sh = 0;
-        for (byte b : data) { tag |= ((long)(b&0x7F))<<sh; sh+=7; if((b&0x80)==0) break; }
-        return (int)(tag>>3);
+        if(data.length==0)return -1;
+        long tag=0;int sh=0;
+        for(byte b:data){tag|=((long)(b&0x7F))<<sh;sh+=7;if((b&0x80)==0)break;}
+        return(int)(tag>>3);
     }
     public int parsePingValue(byte[] data) {
-        byte[] inner = parseEmbedded(data, 1);
-        return inner == null ? 0 : (int)parseVarintField(inner, 1);
+        byte[] inner=parseEmbedded(data,1);
+        return inner==null?0:(int)parseVarintField(inner,1);
     }
 
     // ── Framing ───────────────────────────────────────────────────────────────
     private void sendFramed(byte[] data) throws IOException {
-        byte[] f = new byte[2+data.length];
-        f[0]=(byte)((data.length>>8)&0xFF); f[1]=(byte)(data.length&0xFF);
-        System.arraycopy(data,0,f,2,data.length); out.write(f); out.flush();
+        byte[] f=new byte[2+data.length];
+        f[0]=(byte)((data.length>>8)&0xFF);f[1]=(byte)(data.length&0xFF);
+        System.arraycopy(data,0,f,2,data.length);out.write(f);out.flush();
     }
     private byte[] readFramed() throws IOException {
-        byte[] lb=new byte[2]; int r=0;
+        byte[] lb=new byte[2];int r=0;
         while(r<2){int n=in.read(lb,r,2-r);if(n<0)throw new EOFException();r+=n;}
         int len=((lb[0]&0xFF)<<8)|(lb[1]&0xFF);
-        byte[] buf=new byte[len]; r=0;
+        byte[] buf=new byte[len];r=0;
         while(r<len){int n=in.read(buf,r,len-r);if(n<0)throw new EOFException();r+=n;}
         return buf;
     }
