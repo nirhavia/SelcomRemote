@@ -1,15 +1,17 @@
 package com.selcom.remote;
 import android.util.Log;
 import java.io.*;
-import java.math.BigInteger;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.security.*;
-import java.security.cert.*;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import javax.net.ssl.*;
 
+// Mirrors TvPairing.java from nirhavia/Remote (confirmed working)
+// Changes: hex keys (no base64 parse issues), service=SelcomRemote
+// Framing: 1-byte length prefix (CONFIRMED from working code)
 public class RemoteProtocol implements Closeable {
     private static final String TAG = "RemoteProtocol";
     public  static final int PORT_PAIRING = 6467;
@@ -82,12 +84,10 @@ public class RemoteProtocol implements Closeable {
     }
 
     private SSLContext buildSSLContext() throws Exception {
-        byte[] keyBytes  = fromHex(KEY_HEX);
-        byte[] certBytes = fromHex(CERT_HEX);
         PrivateKey privKey = KeyFactory.getInstance("RSA")
-            .generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
+            .generatePrivate(new PKCS8EncodedKeySpec(fromHex(KEY_HEX)));
         clientCert = (X509Certificate) CertificateFactory.getInstance("X.509")
-            .generateCertificate(new ByteArrayInputStream(certBytes));
+            .generateCertificate(new ByteArrayInputStream(fromHex(CERT_HEX)));
         KeyStore ks = KeyStore.getInstance("PKCS12");
         ks.load(null, null);
         ks.setKeyEntry("k", privKey, new char[0], new X509Certificate[]{clientCert});
@@ -104,50 +104,70 @@ public class RemoteProtocol implements Closeable {
         return ssl;
     }
 
-    private void openSocket(String host, int port, int timeoutMs) throws Exception {
+    public void connectForPairing(String host) throws Exception {
         SSLContext ssl = buildSSLContext();
         sock = (SSLSocket) ssl.getSocketFactory().createSocket();
         sock.setEnabledProtocols(sock.getSupportedProtocols());
         sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
-        sock.connect(new InetSocketAddress(host, port), timeoutMs);
-        sock.setSoTimeout(60000);
+        sock.connect(new InetSocketAddress(host, PORT_PAIRING), 5000);
         sock.startHandshake();
         in  = sock.getInputStream();
         out = sock.getOutputStream();
-        Log.d(TAG, "Connected port=" + port);
+        Log.d(TAG, "Pairing TLS OK: " + sock.getSession().getProtocol());
     }
 
-    public void connectForPairing(String host) throws Exception { openSocket(host, PORT_PAIRING, 5000); }
-    public void connectForRemote(String host)  throws Exception { openSocket(host, PORT_REMOTE,  5000); sock.setSoTimeout(35000); }
-
-    public void sendRemoteConfigure() throws Exception {
-        byte[] model  = protoStr(1, "SelcomRemote");
-        byte[] vendor = protoStr(2, "DIY");
-        byte[] di     = concat(model, vendor);
-        byte[] cfg    = protoBytes(1, di);
-        sendMsg(protoBytes(1, cfg));
-        Log.d(TAG, "-> RemoteConfigure");
+    public void connectForRemote(String host) throws Exception {
+        SSLContext ssl = buildSSLContext();
+        sock = (SSLSocket) ssl.getSocketFactory().createSocket();
+        sock.setEnabledProtocols(sock.getSupportedProtocols());
+        sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
+        sock.connect(new InetSocketAddress(host, PORT_REMOTE), 5000);
+        sock.setSoTimeout(35000);
+        sock.startHandshake();
+        in  = sock.getInputStream();
+        out = sock.getOutputStream();
+        Log.d(TAG, "Remote TLS OK: " + sock.getSession().getProtocol());
     }
 
+    // Step 1
     public void sendPairingRequest() throws Exception {
-        byte[] pr = protoStr(1, "SelcomRemote");
-        sendMsg(protoBytes(2, pr));
+        byte[] svc = "atvremote".getBytes("UTF-8");
+        byte[] cli = "SelcomRemote".getBytes("UTF-8");
+        ByteArrayOutputStream inner = new ByteArrayOutputStream();
+        inner.write(0x0A); inner.write(svc.length); inner.write(svc);
+        inner.write(0x12); inner.write(cli.length); inner.write(cli);
+        ByteArrayOutputStream msg = new ByteArrayOutputStream();
+        msg.write(new byte[]{8, 2, 16, (byte)200, 1, 82});
+        msg.write(inner.size());
+        msg.write(inner.toByteArray());
+        sendMsg(msg.toByteArray());
         Log.d(TAG, "-> PairingRequest");
+    }
+
+    // Step 2 - exact bytes
+    public void sendPairingOptions() throws Exception {
+        sendMsg(new byte[]{8,2,16,(byte)200,1,(byte)162,1,8,10,4,8,3,16,6,24,1});
+        Log.d(TAG, "-> Options");
+    }
+
+    // Step 3 - exact bytes - TV shows code after ack
+    public void sendPairingConfig() throws Exception {
+        sendMsg(new byte[]{8,2,16,(byte)200,1,(byte)242,1,8,10,4,8,3,16,6,16,1});
+        Log.d(TAG, "-> Config");
     }
 
     public void readAndDiscard() throws Exception {
         byte[] d = readMsg();
-        Log.d(TAG, "<- ack len=" + d.length);
+        Log.d(TAG, "<- ack " + d.length + "b");
     }
 
+    // Secret = SHA256(clientMod+clientExp+serverMod+serverExp + hexToBytes(last4ofPin))
     public boolean sendPairingSecret(String pin) throws Exception {
         X509Certificate srv = (X509Certificate) sock.getSession().getPeerCertificates()[0];
         RSAPublicKey cPub = (RSAPublicKey) clientCert.getPublicKey();
         RSAPublicKey sPub = (RSAPublicKey) srv.getPublicKey();
         String last4 = pin.substring(Math.max(0, pin.length() - 4));
-        byte[] pinBytes = new byte[last4.length()];
-        for (int i = 0; i < last4.length(); i++)
-            pinBytes[i] = (byte) Character.getNumericValue(last4.charAt(i));
+        byte[] pinBytes = hexToBytes(last4);
         Log.d(TAG, "secret pin=" + pin + " last4=" + last4);
         MessageDigest sha = MessageDigest.getInstance("SHA-256");
         sha.update(unsigned(cPub.getModulus()));
@@ -156,72 +176,54 @@ public class RemoteProtocol implements Closeable {
         sha.update(unsigned(sPub.getPublicExponent()));
         sha.update(pinBytes);
         byte[] secret = sha.digest();
-        byte[] ps = protoBytes(1, secret);
-        sendMsg(protoBytes(3, ps));
+        ByteArrayOutputStream msg = new ByteArrayOutputStream();
+        msg.write(new byte[]{8,2,16,(byte)200,1,(byte)194,2,34,10,32});
+        msg.write(secret);
+        sendMsg(msg.toByteArray());
         Log.d(TAG, "-> PairingSecret");
         byte[] ack = readMsg();
-        Log.d(TAG, "<- SecretAck len=" + ack.length);
-        return ack.length > 0;
+        boolean ok = ack.length >= 5 && (ack[3] & 0xFF) == 200;
+        Log.d(TAG, "<- SecretAck ok=" + ok);
+        return ok;
     }
 
     public synchronized void sendKeyCode(int kc) throws Exception {
-        byte[] down = concat(protoVarint(1, kc), protoVarint(2, 1));
-        byte[] up   = concat(protoVarint(1, kc), protoVarint(2, 2));
-        sendMsg(protoBytes(5, down));
-        sendMsg(protoBytes(5, up));
+        sendMsg(new byte[]{82, 5, 8, (byte)kc, 1, 16, 3});
     }
 
     public void sendPingResponse(int v) throws Exception {
         out.write(new byte[]{74, 2, 8, (byte)v}); out.flush();
-        Log.d(TAG, "-> pong");
+        Log.d(TAG, "-> pong (no prefix)");
     }
 
     public byte[] readRemoteMessage() throws Exception { return readMsg(); }
     public int parseOuterFieldNumber(byte[] d) { return d.length == 0 ? -1 : (d[0]&0xFF) >> 3; }
     public int parsePingValue(byte[] d) { return d.length >= 4 ? d[3]&0xFF : 0; }
 
+    // *** 1-byte framing (confirmed from TvPairing.java) ***
     private void sendMsg(byte[] msg) throws Exception {
-        ByteBuffer bb = ByteBuffer.allocate(4 + msg.length);
-        bb.putInt(msg.length);
-        bb.put(msg);
-        out.write(bb.array()); out.flush();
+        out.write(msg.length & 0xFF);  // single byte!
+        out.write(msg);
+        out.flush();
     }
-
     private byte[] readMsg() throws Exception {
-        byte[] lb = new byte[4]; int r = 0;
-        while (r < 4) { int n = in.read(lb, r, 4-r); if (n<0) throw new EOFException(); r+=n; }
-        int len = ByteBuffer.wrap(lb).getInt();
-        if (len < 0 || len > 65536) throw new IOException("bad len=" + len);
-        byte[] buf = new byte[len]; r = 0;
+        int len = in.read() & 0xFF;
+        byte[] buf = new byte[len]; int r = 0;
         while (r < len) { int n = in.read(buf, r, len-r); if (n<0) throw new EOFException(); r+=n; }
         return buf;
     }
 
-    private static byte[] protoBytes(int fn, byte[] val) throws IOException {
-        ByteArrayOutputStream o = new ByteArrayOutputStream();
-        writeVarint(o, (fn << 3) | 2); writeVarint(o, val.length); o.write(val);
-        return o.toByteArray();
-    }
-    private static byte[] protoStr(int fn, String s) throws IOException { return protoBytes(fn, s.getBytes("UTF-8")); }
-    private static byte[] protoVarint(int fn, long val) throws IOException {
-        ByteArrayOutputStream o = new ByteArrayOutputStream();
-        writeVarint(o, (fn << 3) | 0); writeVarint(o, val);
-        return o.toByteArray();
-    }
-    private static void writeVarint(OutputStream o, long v) throws IOException {
-        while ((v & ~0x7FL) != 0) { o.write((int)((v & 0x7F) | 0x80)); v >>>= 7; }
-        o.write((int)(v & 0x7F));
-    }
-    private static byte[] concat(byte[]... arrays) throws IOException {
-        ByteArrayOutputStream o = new ByteArrayOutputStream();
-        for (byte[] a : arrays) o.write(a);
-        return o.toByteArray();
-    }
-    private static byte[] unsigned(BigInteger n) {
+    private static byte[] unsigned(java.math.BigInteger n) {
         byte[] b = n.abs().toByteArray();
         if (b[0] == 0) { byte[] t = new byte[b.length-1]; System.arraycopy(b,1,t,0,t.length); return t; }
         return b;
     }
-    public boolean isConnected() { return sock != null && !sock.isClosed() && sock.isConnected(); }
-    @Override public void close() { try { if (sock != null) sock.close(); } catch (IOException ignored) {} }
+    private static byte[] hexToBytes(String hex) {
+        byte[] out = new byte[hex.length()/2];
+        for (int i=0; i<hex.length(); i+=2)
+            out[i/2] = (byte) Integer.parseInt(hex.substring(i,i+2),16);
+        return out;
+    }
+    public boolean isConnected() { return sock!=null && !sock.isClosed() && sock.isConnected(); }
+    @Override public void close() { try { if (sock!=null) sock.close(); } catch (IOException ignored) {} }
 }
