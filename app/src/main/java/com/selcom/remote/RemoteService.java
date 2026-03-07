@@ -16,7 +16,7 @@ public class RemoteService extends Service {
     public static final String EXTRA_KEY_CODE="key_code", EXTRA_HOST="host";
     public static final String PREF_FILE="selcom_remote", PREF_HOST="paired_host", PREF_PAIRED="is_paired";
 
-    private RemoteProtocol protocol;
+    private volatile RemoteProtocol protocol;
     private Thread connThread;
     private volatile boolean running=false, intentionalStop=false;
     private volatile String currentHost;
@@ -77,6 +77,8 @@ public class RemoteService extends Service {
         startConnectionLoop();
     }
 
+    public String getCurrentHost() { return currentHost; }
+
     private void startConnectionLoop() {
         if (connThread != null) connThread.interrupt();
         running = true; intentionalStop = false;
@@ -86,23 +88,23 @@ public class RemoteService extends Service {
                     updateNotif("מתחבר...");
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
+                    protocol.sendRemoteStart();
                     updateNotif("מחובר " + currentHost);
-                    // Read loop - handle pings (field 9 = [74,...])
+                    long lastKa = System.currentTimeMillis();
                     while (running && !Thread.currentThread().isInterrupted()) {
                         byte[] m = protocol.readRemoteMessage();
                         int fn = protocol.parseOuterFieldNumber(m);
-                        Log.d(TAG, "recv field=" + fn + " len=" + m.length);
-                        if (fn == 9) {  // ping: first byte 74 = field9,wire2
-                            protocol.sendPingResponse(protocol.parsePingValue(m));
+                        if (fn == 9) protocol.sendPingResponse(protocol.parsePingValue(m));
+                        if (System.currentTimeMillis() - lastKa > 5000) {
+                            protocol.sendKeepalive();
+                            lastKa = System.currentTimeMillis();
                         }
-                        // fn==4: key_inject ack (ignore)
-                        // fn==3: set_active ack (ignore)
                     }
                 } catch (Exception e) {
                     if (!running || intentionalStop) break;
-                    Log.w(TAG, "conn error: " + e.getMessage());
+                    Log.w(TAG, "conn: " + e.getMessage());
                     closeProtocol();
-                    updateNotif("לא מחובר - מנסה שוב...");
+                    updateNotif("מנסה שוב...");
                     try { Thread.sleep(RECONNECT_MS); } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt(); break;
                     }
@@ -116,19 +118,12 @@ public class RemoteService extends Service {
     public void sendKey(int kc) {
         RemoteProtocol p = protocol;
         if (p != null && p.isConnected()) new Thread(() -> {
-            try { p.sendKeyCode(kc); }
+            try { p.sendKeyCode(kc); p.sendKeepalive(); }
             catch (Exception e) { Log.e(TAG, "sendKey: " + e.getMessage()); }
         }).start();
-        else Log.w(TAG, "sendKey: not connected");
     }
 
-
-    public String getCurrentHost() { return currentHost; }
-
-    public boolean isConnected() {
-        return protocol != null && protocol.isConnected();
-    }
-
+    public boolean isConnected() { return protocol != null && protocol.isConnected(); }
     public RemoteProtocol getClient() { return protocol; }
 
     private void disconnect() {
@@ -136,31 +131,21 @@ public class RemoteService extends Service {
         if (connThread != null) { connThread.interrupt(); connThread = null; }
         closeProtocol();
     }
-
     private void closeProtocol() {
         RemoteProtocol p = protocol; protocol = null;
         if (p != null) try { p.close(); } catch (Exception ignored) {}
     }
-
-    private void updateNotif(String text) {
-        postForeground(text);
-    }
-
+    private void updateNotif(String t) { postForeground(t); }
     private void postForeground(String text) {
         Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Selcom Remote")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_menu_send)
-            .setOngoing(true).build();
+            .setContentTitle("Selcom Remote").setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_menu_send).setOngoing(true).build();
         if (Build.VERSION.SDK_INT >= 29)
             startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        else
-            startForeground(NOTIF_ID, n);
+        else startForeground(NOTIF_ID, n);
     }
-
     private void createChannel() {
-        NotificationChannel ch = new NotificationChannel(
-            CHANNEL_ID, "Selcom Remote", NotificationManager.IMPORTANCE_LOW);
+        NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Selcom Remote", NotificationManager.IMPORTANCE_LOW);
         ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(ch);
     }
 }
