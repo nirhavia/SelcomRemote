@@ -1,4 +1,5 @@
 package com.selcom.remote;
+import android.util.Base64;
 import android.util.Log;
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -14,57 +15,44 @@ public class RemoteProtocol implements Closeable {
     public  static final int PORT_PAIRING = 6467;
     public  static final int PORT_REMOTE  = 6466;
 
-    private static final String KEY_HEX =
-        "308204bf020100300d06092a864886f70d0101010500048204a9308204a50201000282010100ca79"
-        + ""3cb2499677079b4bec0c41c29505b7133cbed5402ca235c2d29d6d2ab32b8f93b4ccd93d7a41c241"
-        + ""5cd3326579204804ba2206b43a1486645b6bafd0c10b48cb0253ef1f7e160df42ed1fdbc04f852fe"
-        + ""43589d44fcc59a96a925394c084286a96ada23ce3c7222b77c9eb98f82ae08b100c3a635a6a43004"
-        + ""3c812c0cc113abe2dc8bcee0bec2b9b4bd0a141df5284019940ceca75780363d8d10a084e7d93ee2"
-        + ""b716e751d407738ca8a47698a57f8504473605183e43594c1da43b062f1044ac5e50f394e527a6eb"
-        + ""876033634ad07f679e1a0879b63c1052f8103f42e31dbcfd9ccf9de1b642b50d611e7884b96fa80f"
-        + ""f331790870eaa8e442f09dba93a502030100010282010009784eadb311e9cace0968c6b0fbb21f24"
-        + ""8f2e87e96ef9377406c2f59081cf040250e103b4c47297a94787d92bf2018e9037c261ed88d7ef96"
-        + ""5292d11055d5f59a67be59e1250aaf6ae3291e72bcecc9958e2565bb635ae43e24fe4fcaa482fd63"
-        + ""91807927f41131306cff13e86f6d2809298834de6d037889f364c610e29ed42084c4c51f33e119de"
-        + ""4114f73241f3c231cd27a74d34bfb88b36b25919c8d9ff585d9d7710ae799c3679eb7d95d16357ca"
-        + ""a3f510e5aa01e7a61baf5e982e225196c0cd7d7cc58975d3fbbb5f6077e3a1bb2364d2719b075d90"
-        + ""4f6fd267b3353ea7b2991c3d6af8e4fe58fc12786b4c84103adab168ba72d92c0eac96064fbf7902"
-        + ""818100ffbe83234a9a8feca20562e3ae6e8a95b8e096741339b340e6dc87ccf4ad20c32043a9a11a"
-        + ""fefa1682efdf35a0a98bd45ccb6e0fae85006fda1e5815d8ee3fc2e0ae154f4ab1aaad8db4c64a7e"
-        + ""77e9d3ed986a5e350fa368a374d0430f4340290de93860ce607f198c8027a65fdffd509dee6b5796"
-        + ""e899d9d8a6eccde81da41d02818100caad157f51af08ab580f4b6d8397bce860e6a592ee6db5d84c"
-        + ""2a150b89701c1712138293d4c1673c6938770b0c8e652c76a4fc3d2e8413d33411bb982686e311c0"
-        + ""ea332f323ff9b3353538a14c2ac7d932d1c606e9dc9e8ab58c5c4e180a6a32585386b58c06bb99b8"
-        + ""0910d7892e4ae2480b726833db845508a0556e1230872902818100c24c7c975073d34ae5e18fbb09"
-        + ""684473f1ecf781a2a5a0d17b542afc851c0f9b0fa5387804e99919874b34db2a8005934718eb3a90"
-        + ""cdcd822d4606883ab2efd060210261a68f0aec26902462ae68ee46abe9b34e75a3b6f3a5d3f6f22b"
-        + ""e35d1893d00f9c44cf3d612cc4a4db1b5632bf8fed76b22a1df7dd716388dffb2ca1e5028181009e"
-        + ""1ffa04b27b081d7e7fb84e81fb91b40f5e03d225d94ca5ab8ead8aa9b8e10192e5cbdb808340031e"
-        + ""e8a1dfe9f4f2b4850065976a423ba16d1f64a7e96f159b9552638aaffebfd6f46d4878778f6d0a65"
-        + ""1ecb0c3bcb179a8ad82e6ff34bb4dd00927228144e707116e763cf7544bbc1dd89a8c1e9ab9b8c28"
-        + ""45c7413049d2390281810099d5e2b7890b75218494a90c3579bbdffa2721a35fad52bd5168c525ea"
-        + ""1d300c9129cf5a9932144463d0d64746bd8dc27a334e5027875b2cf7d40852faf79bb724a3cc1cc2"
-        + ""fa6c312d1a08af28dc68653d656cfab994daa38ad373cdf9a7f272343f8730abffcf519744e2ba74"
-        + ""3f8a07326e614bc068182f4147e420d3594696";
-    private static final String CERT_HEX =
-        "308202b33082019ba0030201020213572f1ce3a87df8fe71b9213fa381f1a0d02e25300d06092a86"
-        + ""4886f70d01010b050030143112301006035504030c0961747672656d6f7465301e170d3233303130"
-        + ""313030303030305a170d3335303130313030303030305a30143112301006035504030c0961747672"
-        + ""656d6f746530820122300d06092a864886f70d01010105000382010f003082010a0282010100ca79"
-        + ""3cb2499677079b4bec0c41c29505b7133cbed5402ca235c2d29d6d2ab32b8f93b4ccd93d7a41c241"
-        + ""5cd3326579204804ba2206b43a1486645b6bafd0c10b48cb0253ef1f7e160df42ed1fdbc04f852fe"
-        + ""43589d44fcc59a96a925394c084286a96ada23ce3c7222b77c9eb98f82ae08b100c3a635a6a43004"
-        + ""3c812c0cc113abe2dc8bcee0bec2b9b4bd0a141df5284019940ceca75780363d8d10a084e7d93ee2"
-        + ""b716e751d407738ca8a47698a57f8504473605183e43594c1da43b062f1044ac5e50f394e527a6eb"
-        + ""876033634ad07f679e1a0879b63c1052f8103f42e31dbcfd9ccf9de1b642b50d611e7884b96fa80f"
-        + ""f331790870eaa8e442f09dba93a50203010001300d06092a864886f70d01010b0500038201010007"
-        + ""aee5f8804ef15b046869a94d65bd0ac48d4c4b094874997704dc1b3c069ab070787062ffd37c2b37"
-        + ""92d3f178f08314b925353f8a1db397427e062eeea7513ec03341cbdc7d7b15935580fad4739890c0"
-        + ""a147e19a9f3cdbd6029ca8ff424f038d7363a06584a58c4a0c7363dfb0c09a06a7e1b5d5a46f23d8"
-        + ""5c842582f2b28d879ecc2d1e12a85696d7e54d48b59b4a0f2fb1ad50887267f62d899e60aca8f55c"
-        + ""1cc175533558af8afd924ae0be17a199d00398457a0e674c80bfe07acba1504f60cbd8065dfdb759"
-        + ""058e8cab69b6042c3c71f73909d504d615d3786bd07f93b33e3d7333ce5f7d5b80f7610be1e9fe0b"
-        + ""69963ba758157b8088098f667ce1f8";
+    private static final String KEY_B64 =
+        "MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDKeTyySZZ3B5tL7AxBwpUFtxM8"
+        + "vtVALKI1wtKdbSqzK4+TtMzZPXpBwkFc0zJleSBIBLoiBrQ6FIZkW2uv0MELSMsCU+8ffhYN9C7R"
+        + "/bwE+FL+Q1idRPzFmpapJTlMCEKGqWraI848ciK3fJ65j4KuCLEAw6Y1pqQwBDyBLAzBE6vi3IvO"
+        + "4L7CubS9ChQd9ShAGZQM7KdXgDY9jRCghOfZPuK3FudR1AdzjKikdpilf4UERzYFGD5DWUwdpDsG"
+        + "LxBErF5Q85TlJ6brh2AzY0rQf2eeGgh5tjwQUvgQP0LjHbz9nM+d4bZCtQ1hHniEuW+oD/MxeQhw"
+        + "6qjkQvCdupOlAgMBAAECggEACXhOrbMR6crOCWjGsPuyHySPLofpbvk3dAbC9ZCBzwQCUOEDtMRy"
+        + "l6lHh9kr8gGOkDfCYe2I1++WUpLREFXV9ZpnvlnhJQqvauMpHnK87MmVjiVlu2Na5D4k/k/KpIL9"
+        + "Y5GAeSf0ETEwbP8T6G9tKAkpiDTebQN4ifNkxhDintQghMTFHzPhGd5BFPcyQfPCMc0np000v7iL"
+        + "NrJZGcjZ/1hdnXcQrnmcNnnrfZXRY1fKo/UQ5aoB56Ybr16YLiJRlsDNfXzFiXXT+7tfYHfjobsj"
+        + "ZNJxmwddkE9v0mezNT6nspkcPWr45P5Y/BJ4a0yEEDrasWi6ctksDqyWBk+/eQKBgQD/voMjSpqP"
+        + "7KIFYuOuboqVuOCWdBM5s0Dm3IfM9K0gwyBDqaEa/voWgu/fNaCpi9Rcy24ProUAb9oeWBXY7j/C"
+        + "4K4VT0qxqq2NtMZKfnfp0+2Yal41D6Noo3TQQw9DQCkN6ThgzmB/GYyAJ6Zf3/1Qne5rV5bomdnY"
+        + "puzN6B2kHQKBgQDKrRV/Ua8Iq1gPS22Dl7zoYOalku5ttdhMKhULiXAcFxITgpPUwWc8aTh3CwyO"
+        + "ZSx2pPw9LoQT0zQRu5gmhuMRwOozLzI/+bM1NTihTCrH2TLRxgbp3J6KtYxcThgKajJYU4a1jAa7"
+        + "mbgJENeJLkriSAtyaDPbhFUIoFVuEjCHKQKBgQDCTHyXUHPTSuXhj7sJaERz8ez3gaKloNF7VCr8"
+        + "hRwPmw+lOHgE6ZkZh0s02yqABZNHGOs6kM3Ngi1GBog6su/QYCECYaaPCuwmkCRirmjuRqvps051"
+        + "o7bzpdP28ivjXRiT0A+cRM89YSzEpNsbVjK/j+12siod991xY4jf+yyh5QKBgQCeH/oEsnsIHX5/"
+        + "uE6B+5G0D14D0iXZTKWrjq2KqbjhAZLly9uAg0ADHuih3+n08rSFAGWXakI7oW0fZKfpbxWblVJj"
+        + "iq/+v9b0bUh4d49tCmUeyww7yxeaitgub/NLtN0AknIoFE5wcRbnY891RLvB3Ymowemrm4woRcdB"
+        + "MEnSOQKBgQCZ1eK3iQt1IYSUqQw1ebvf+icho1+tUr1RaMUl6h0wDJEpz1qZMhREY9DWR0a9jcJ6"
+        + "M05QJ4dbLPfUCFL695u3JKPMHML6bDEtGgivKNxoZT1lbPq5lNqjitNzzfmn8nI0P4cwq//PUZdE"
+        + "4rp0P4oHMm5hS8BoGC9BR+Qg01lGlg==";
+
+    private static final String CERT_B64 =
+        "MIICszCCAZugAwIBAgITVy8c46h9+P5xuSE/o4HxoNAuJTANBgkqhkiG9w0BAQsFADAUMRIwEAYD"
+        + "VQQDDAlhdHZyZW1vdGUwHhcNMjMwMTAxMDAwMDAwWhcNMzUwMTAxMDAwMDAwWjAUMRIwEAYDVQQD"
+        + "DAlhdHZyZW1vdGUwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDKeTyySZZ3B5tL7AxB"
+        + "wpUFtxM8vtVALKI1wtKdbSqzK4+TtMzZPXpBwkFc0zJleSBIBLoiBrQ6FIZkW2uv0MELSMsCU+8f"
+        + "fhYN9C7R/bwE+FL+Q1idRPzFmpapJTlMCEKGqWraI848ciK3fJ65j4KuCLEAw6Y1pqQwBDyBLAzB"
+        + "E6vi3IvO4L7CubS9ChQd9ShAGZQM7KdXgDY9jRCghOfZPuK3FudR1AdzjKikdpilf4UERzYFGD5D"
+        + "WUwdpDsGLxBErF5Q85TlJ6brh2AzY0rQf2eeGgh5tjwQUvgQP0LjHbz9nM+d4bZCtQ1hHniEuW+o"
+        + "D/MxeQhw6qjkQvCdupOlAgMBAAEwDQYJKoZIhvcNAQELBQADggEBAAeu5fiATvFbBGhpqU1lvQrE"
+        + "jUxLCUh0mXcE3Bs8BpqwcHhwYv/TfCs3ktPxePCDFLklNT+KHbOXQn4GLu6nUT7AM0HL3H17FZNV"
+        + "gPrUc5iQwKFH4ZqfPNvWApyo/0JPA41zY6BlhKWMSgxzY9+wwJoGp+G11aRvI9hchCWC8rKNh57M"
+        + "LR4SqFaW1+VNSLWbSg8vsa1QiHJn9i2JnmCsqPVcHMF1UzVYr4r9kkrgvhehmdADmEV6DmdMgL/g"
+        + "esuhUE9gy9gGXf23WQWOjKtptgQsPHH3OQnVBNYV03hr0H+Tsz49czPOX31bgPdhC+Hp/gtpljun"
+        + "WBV7gIgJj2Z84fg=";
 
     private SSLSocket sock;
     private InputStream  in;
@@ -73,18 +61,11 @@ public class RemoteProtocol implements Closeable {
 
     public RemoteProtocol() {}
 
-    private static byte[] fromHex(String h) {
-        byte[] b = new byte[h.length() / 2];
-        for (int i = 0; i < h.length(); i += 2)
-            b[i/2] = (byte) Integer.parseInt(h.substring(i, i+2), 16);
-        return b;
-    }
-
     private SSLContext buildSSLContext() throws Exception {
         PrivateKey privKey = KeyFactory.getInstance("RSA")
-            .generatePrivate(new PKCS8EncodedKeySpec(fromHex(KEY_HEX)));
+            .generatePrivate(new PKCS8EncodedKeySpec(Base64.decode(KEY_B64, Base64.DEFAULT)));
         clientCert = (X509Certificate) CertificateFactory.getInstance("X.509")
-            .generateCertificate(new ByteArrayInputStream(fromHex(CERT_HEX)));
+            .generateCertificate(new ByteArrayInputStream(Base64.decode(CERT_B64, Base64.DEFAULT)));
         KeyStore ks = KeyStore.getInstance("PKCS12");
         ks.load(null, null);
         ks.setKeyEntry("k", privKey, new char[0], new X509Certificate[]{clientCert});
@@ -124,7 +105,6 @@ public class RemoteProtocol implements Closeable {
         Log.d(TAG, "Remote TLS OK");
     }
 
-    // ── Pairing ─────────────────────────────────────────────────
     public void sendPairingRequest() throws Exception {
         byte[] svc = "atvremote".getBytes("UTF-8");
         byte[] cli = "SelcomRemote".getBytes("UTF-8");
@@ -133,25 +113,20 @@ public class RemoteProtocol implements Closeable {
         inner.write(0x12); inner.write(cli.length); inner.write(cli);
         ByteArrayOutputStream msg = new ByteArrayOutputStream();
         msg.write(new byte[]{8, 2, 16, (byte)200, 1, 82});
-        msg.write(inner.size());
-        msg.write(inner.toByteArray());
+        msg.write(inner.size()); msg.write(inner.toByteArray());
         sendMsg(msg.toByteArray());
-        Log.d(TAG, "-> PairingRequest");
     }
 
     public void sendPairingOptions() throws Exception {
         sendMsg(new byte[]{8,2,16,(byte)200,1,(byte)162,1,8,10,4,8,3,16,6,24,1});
-        Log.d(TAG, "-> Options");
     }
 
     public void sendPairingConfig() throws Exception {
         sendMsg(new byte[]{8,2,16,(byte)200,1,(byte)242,1,8,10,4,8,3,16,6,16,1});
-        Log.d(TAG, "-> Config");
     }
 
     public void readAndDiscard() throws Exception {
-        byte[] d = readMsg();
-        Log.d(TAG, "<- ack " + d.length + "b");
+        readMsg();
     }
 
     public boolean sendPairingSecret(String pin) throws Exception {
@@ -160,80 +135,69 @@ public class RemoteProtocol implements Closeable {
         RSAPublicKey sPub = (RSAPublicKey) srv.getPublicKey();
         String last4 = pin.substring(Math.max(0, pin.length() - 4));
         byte[] pinBytes = hexToBytes(last4);
-        Log.d(TAG, "secret pin=" + pin + " last4=" + last4);
         MessageDigest sha = MessageDigest.getInstance("SHA-256");
-        sha.update(unsigned(cPub.getModulus()));
-        sha.update(unsigned(cPub.getPublicExponent()));
-        sha.update(unsigned(sPub.getModulus()));
-        sha.update(unsigned(sPub.getPublicExponent()));
+        sha.update(unsigned(cPub.getModulus())); sha.update(unsigned(cPub.getPublicExponent()));
+        sha.update(unsigned(sPub.getModulus())); sha.update(unsigned(sPub.getPublicExponent()));
         sha.update(pinBytes);
         byte[] secret = sha.digest();
         ByteArrayOutputStream msg = new ByteArrayOutputStream();
         msg.write(new byte[]{8,2,16,(byte)200,1,(byte)194,2,34,10,32});
         msg.write(secret);
         sendMsg(msg.toByteArray());
-        Log.d(TAG, "-> PairingSecret");
         byte[] ack = readMsg();
         boolean ok = ack.length >= 5 && (ack[3] & 0xFF) == 200;
-        Log.d(TAG, "<- SecretAck ok=" + ok);
+        Log.d(TAG, "SecretAck ok=" + ok);
         return ok;
     }
 
-    // ── Remote control ─────────────────────────────────────────────
-    // RemoteStart: MUST send before any key events (field4, wire2)
+    // RemoteStart: field4 wire2, must send before key events
     public void sendRemoteStart() throws Exception {
         sendMsg(new byte[]{34, 2, 8, 1});
         Log.d(TAG, "-> RemoteStart");
     }
 
-    // key_inject: field4 wire2 tag=34, inner: keycode + action=PRESS(3)
-    // Wire: [6, 34, 4, 8, kc, 16, 3]  e.g. HOME: 06 22 04 08 03 10 03
+    // key_inject: field4 wire2 tag=34, action=PRESS(3)
+    // wire: [6, 34, 4, 8, kc, 16, 3]
     public synchronized void sendKeyCode(int kc) throws Exception {
         sendMsg(new byte[]{34, 4, 8, (byte)kc, 16, 3});
     }
 
-    // Keepalive: field6 varint, no length prefix
+    // keepalive: field6 varint, NO length prefix
     public void sendKeepalive() throws Exception {
-        out.write(new byte[]{48, 1});
-        out.flush();
+        out.write(new byte[]{48, 1}); out.flush();
     }
 
-    // Pong: no length prefix
+    // pong: NO length prefix
     public void sendPingResponse(int v) throws Exception {
-        out.write(new byte[]{74, 2, 8, (byte)v});
-        out.flush();
-        Log.d(TAG, "-> pong");
+        out.write(new byte[]{74, 2, 8, (byte)v}); out.flush();
     }
 
     public byte[] readRemoteMessage() throws Exception { return readMsg(); }
-    public int parseOuterFieldNumber(byte[] d) { return d.length == 0 ? -1 : (d[0]&0xFF) >> 3; }
-    public int parsePingValue(byte[] d) { return d.length >= 4 ? d[3]&0xFF : 0; }
+    public int parseOuterFieldNumber(byte[] d) { return d.length==0 ? -1 : (d[0]&0xFF)>>3; }
+    public int parsePingValue(byte[] d) { return d.length>=4 ? d[3]&0xFF : 0; }
+    public boolean isConnected() { return sock!=null && !sock.isClosed() && sock.isConnected(); }
 
-    // ── Framing: single-byte length prefix ─────────────────────────
     private void sendMsg(byte[] msg) throws Exception {
-        out.write(msg.length & 0xFF);
-        out.write(msg);
-        out.flush();
+        out.write(msg.length & 0xFF); out.write(msg); out.flush();
     }
     private byte[] readMsg() throws Exception {
         int len = in.read() & 0xFF;
         byte[] buf = new byte[len]; int r = 0;
-        while (r < len) { int n = in.read(buf, r, len-r); if (n<0) throw new EOFException(); r+=n; }
+        while (r<len) { int n=in.read(buf,r,len-r); if(n<0) throw new EOFException(); r+=n; }
         return buf;
     }
-
-    // ── Helpers ─────────────────────────────────────────────────────
     private static byte[] unsigned(java.math.BigInteger n) {
         byte[] b = n.abs().toByteArray();
-        if (b[0] == 0) { byte[] t = new byte[b.length-1]; System.arraycopy(b,1,t,0,t.length); return t; }
+        if (b[0]==0) { byte[] t=new byte[b.length-1]; System.arraycopy(b,1,t,0,t.length); return t; }
         return b;
     }
     private static byte[] hexToBytes(String hex) {
         byte[] out = new byte[hex.length()/2];
         for (int i=0; i<hex.length(); i+=2)
-            out[i/2] = (byte) Integer.parseInt(hex.substring(i,i+2),16);
+            out[i/2]=(byte)Integer.parseInt(hex.substring(i,i+2),16);
         return out;
     }
-    public boolean isConnected() { return sock!=null && !sock.isClosed() && sock.isConnected(); }
-    @Override public void close() { try { if (sock!=null) sock.close(); } catch (IOException ignored) {} }
+    @Override public void close() {
+        try { if (sock!=null) sock.close(); } catch (IOException ignored) {}
+    }
 }
