@@ -6,122 +6,141 @@ import android.os.*;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
-import javax.net.ssl.SSLContext;
-import java.io.IOException;
+
 public class RemoteService extends Service {
-    private static final String TAG="RemoteService",CHANNEL_ID="selcom_ch";
-    private static final int NOTIF_ID=1,RECONNECT_MS=3000;
+    private static final String TAG="RemoteService", CHANNEL_ID="selcom_ch";
+    private static final int NOTIF_ID=1, RECONNECT_MS=3000;
     public static final String ACTION_SEND_KEY="com.selcom.remote.SEND_KEY";
     public static final String ACTION_CONNECT="com.selcom.remote.CONNECT";
     public static final String ACTION_DISCONNECT="com.selcom.remote.DISCONNECT";
-    public static final String EXTRA_KEY_CODE="key_code",EXTRA_HOST="host";
-    public static final String PREF_FILE="selcom_remote",PREF_HOST="paired_host",PREF_PAIRED="is_paired";
+    public static final String EXTRA_KEY_CODE="key_code", EXTRA_HOST="host";
+    public static final String PREF_FILE="selcom_remote", PREF_HOST="paired_host", PREF_PAIRED="is_paired";
+
     private RemoteProtocol protocol;
     private Thread connThread;
-    private volatile boolean running=false,intentionalStop=false;
+    private volatile boolean running=false, intentionalStop=false;
     private volatile String currentHost;
-    private final BroadcastReceiver keyReceiver=new BroadcastReceiver(){
-        @Override public void onReceive(Context ctx,Intent intent){
-            if(ACTION_SEND_KEY.equals(intent.getAction())){
-                int code=intent.getIntExtra(EXTRA_KEY_CODE,-1);
-                if(code!=-1)sendKey(code);
+
+    private final BroadcastReceiver keyReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context ctx, Intent intent) {
+            if (ACTION_SEND_KEY.equals(intent.getAction())) {
+                int code = intent.getIntExtra(EXTRA_KEY_CODE, -1);
+                if (code != -1) sendKey(code);
             }
         }
     };
-    private final IBinder binder=new LocalBinder();
-    public class LocalBinder extends Binder{public RemoteService getService(){return RemoteService.this;}}
-    @Override public IBinder onBind(Intent i){return binder;}
-    @Override public void onCreate(){
+
+    private final IBinder binder = new LocalBinder();
+    public class LocalBinder extends Binder { public RemoteService getService() { return RemoteService.this; } }
+    @Override public IBinder onBind(Intent i) { return binder; }
+
+    @Override public void onCreate() {
         super.onCreate();
         createChannel();
-        ContextCompat.registerReceiver(this,keyReceiver,new IntentFilter(ACTION_SEND_KEY),ContextCompat.RECEIVER_NOT_EXPORTED);
+        ContextCompat.registerReceiver(this, keyReceiver,
+            new IntentFilter(ACTION_SEND_KEY), ContextCompat.RECEIVER_NOT_EXPORTED);
     }
-    @Override public int onStartCommand(Intent intent,int flags,int startId){
-        postForeground("מנותק");
-        if(intent!=null){
-            String action=intent.getAction();
-            if(ACTION_CONNECT.equals(action)){String h=intent.getStringExtra(EXTRA_HOST);if(h!=null)setHostAndConnect(h);}
-            else if(ACTION_DISCONNECT.equals(action)){intentionalStop=true;disconnect();}
-            else if(ACTION_SEND_KEY.equals(action)){int c=intent.getIntExtra(EXTRA_KEY_CODE,-1);if(c!=-1)sendKey(c);}
+
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        postForeground("לא מחובר");
+        if (intent != null) {
+            String action = intent.getAction();
+            if (ACTION_CONNECT.equals(action)) {
+                String h = intent.getStringExtra(EXTRA_HOST);
+                if (h != null) setHostAndConnect(h);
+            } else if (ACTION_DISCONNECT.equals(action)) {
+                intentionalStop = true; disconnect();
+            } else if (ACTION_SEND_KEY.equals(action)) {
+                int c = intent.getIntExtra(EXTRA_KEY_CODE, -1);
+                if (c != -1) sendKey(c);
+            }
         }
-        if(currentHost==null&&!intentionalStop){
-            SharedPreferences p=getSharedPreferences(PREF_FILE,MODE_PRIVATE);
-            if(p.getBoolean(PREF_PAIRED,false)){String h=p.getString(PREF_HOST,null);if(h!=null)setHostAndConnect(h);}
+        if (currentHost == null && !intentionalStop) {
+            SharedPreferences p = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
+            if (p.getBoolean(PREF_PAIRED, false)) {
+                String h = p.getString(PREF_HOST, null);
+                if (h != null) setHostAndConnect(h);
+            }
         }
         return START_STICKY;
     }
-    @Override public void onDestroy(){
-        super.onDestroy();running=false;
-        try{unregisterReceiver(keyReceiver);}catch(Exception ignored){}
+
+    @Override public void onDestroy() {
+        super.onDestroy(); running = false;
+        try { unregisterReceiver(keyReceiver); } catch (Exception ignored) {}
         disconnect();
     }
-    public void setHostAndConnect(String host){
-        currentHost=host;
-        getSharedPreferences(PREF_FILE,MODE_PRIVATE).edit().putString(PREF_HOST,host).apply();
+
+    public void setHostAndConnect(String host) {
+        currentHost = host;
+        getSharedPreferences(PREF_FILE, MODE_PRIVATE).edit().putString(PREF_HOST, host).apply();
         startConnectionLoop();
     }
-    private void startConnectionLoop(){
-        if(connThread!=null)connThread.interrupt();
-        running=true;intentionalStop=false;
-        connThread=new Thread(()->{
-            while(running&&!Thread.currentThread().isInterrupted()){
-                try{
+
+    private void startConnectionLoop() {
+        if (connThread != null) connThread.interrupt();
+        running = true; intentionalStop = false;
+        connThread = new Thread(() -> {
+            while (running && !Thread.currentThread().isInterrupted()) {
+                try {
                     updateNotif("מתחבר...");
-                    CertUtils.ensureKeyExists();
-                    SSLContext ssl=CertUtils.createSSLContext();
-                    protocol=new RemoteProtocol(ssl);
+                    protocol = new RemoteProtocol();   // no-arg constructor
                     protocol.connectForRemote(currentHost);
-                    protocol.sendSetActive(true);
-                    updateNotif("מחובר "+currentHost);
-                    while(running&&!Thread.currentThread().isInterrupted()){
-                        byte[] m=protocol.readRemoteMessage();
-                        if(protocol.parseOuterFieldNumber(m)==1)
+                    updateNotif("מחובר " + currentHost);
+                    while (running && !Thread.currentThread().isInterrupted()) {
+                        byte[] m = protocol.readRemoteMessage();
+                        if (protocol.parseOuterFieldNumber(m) == 1)
                             protocol.sendPingResponse(protocol.parsePingValue(m));
                     }
-                }catch(Exception e){
-                    if(!running||intentionalStop)break;
-                    closeProtocol();updateNotif("מנותק - מנסה שוב...");
-                    try{Thread.sleep(RECONNECT_MS);}catch(InterruptedException ie){Thread.currentThread().interrupt();break;}
+                } catch (Exception e) {
+                    if (!running || intentionalStop) break;
+                    closeProtocol();
+                    updateNotif("לא מחובר - מנסה שוב...");
+                    try { Thread.sleep(RECONNECT_MS); } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt(); break;
+                    }
                 }
             }
-            closeProtocol();updateNotif("מנותק");
-        },"ConnThread");
-        connThread.setDaemon(true);connThread.start();
+            closeProtocol(); updateNotif("לא מחובר");
+        }, "ConnThread");
+        connThread.setDaemon(true); connThread.start();
     }
-    public void sendKey(int kc){
-        RemoteProtocol p=protocol;
-        if(p!=null&&p.isConnected())new Thread(()->{
-            try{p.sendKeyCode(kc);}catch(IOException e){Log.e(TAG,"sendKey:"+e.getMessage());}
+
+    public void sendKey(int kc) {
+        RemoteProtocol p = protocol;
+        if (p != null && p.isConnected()) new Thread(() -> {
+            try { p.sendKeyCode(kc); } catch (Exception e) { Log.e(TAG, "sendKey: " + e.getMessage()); }
         }).start();
     }
-    public void disconnect(){running=false;if(connThread!=null)connThread.interrupt();closeProtocol();}
-    private void closeProtocol(){if(protocol!=null){protocol.close();protocol=null;}}
-    public boolean isConnected(){return protocol!=null&&protocol.isConnected();}
-    public String getCurrentHost(){return currentHost;}
-    private void postForeground(String s){
-        Notification n=buildNotif(s);
-        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.Q)
-            startForeground(NOTIF_ID,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        else
-            startForeground(NOTIF_ID,n);
+
+    public void disconnect() { running = false; if (connThread != null) connThread.interrupt(); closeProtocol(); }
+    private void closeProtocol() { if (protocol != null) { protocol.close(); protocol = null; } }
+    public boolean isConnected() { return protocol != null && protocol.isConnected(); }
+    public String getCurrentHost() { return currentHost; }
+
+    private void postForeground(String s) {
+        Notification n = buildNotif(s);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        else startForeground(NOTIF_ID, n);
     }
-    private void updateNotif(String s){
-        NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-        if(nm!=null)nm.notify(NOTIF_ID,buildNotif(s));
+    private void updateNotif(String s) {
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm != null) nm.notify(NOTIF_ID, buildNotif(s));
     }
-    private Notification buildNotif(String s){
-        Intent i=new Intent(this,MainActivity.class);
-        PendingIntent pi=PendingIntent.getActivity(this,0,i,PendingIntent.FLAG_IMMUTABLE);
-        return new NotificationCompat.Builder(this,CHANNEL_ID)
+    private Notification buildNotif(String s) {
+        Intent i = new Intent(this, MainActivity.class);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE);
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Selcom Remote").setContentText(s)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(pi).setOngoing(true).build();
     }
-    private void createChannel(){
-        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
-            NotificationChannel ch=new NotificationChannel(CHANNEL_ID,"Selcom Remote",NotificationManager.IMPORTANCE_LOW);
-            NotificationManager nm=getSystemService(NotificationManager.class);
-            if(nm!=null)nm.createNotificationChannel(ch);
+    private void createChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Selcom Remote", NotificationManager.IMPORTANCE_LOW);
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null) nm.createNotificationChannel(ch);
         }
     }
 }
