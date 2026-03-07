@@ -17,11 +17,11 @@ public class CertUtils {
     public static void ensureKeyExists() throws Exception {
         KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
         ks.load(null);
-        if (ks.containsAlias(KEY_ALIAS)) { Log.d(TAG, "Key exists"); return; }
+    public  static final String KEY_ALIAS = "SelcomRemoteKey";
         Calendar s = Calendar.getInstance(), e = Calendar.getInstance();
         e.add(Calendar.YEAR, 25);
         KeyPairGenerator kpg = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore");
-        kpg.initialize(new KeyGenParameterSpec.Builder(KEY_ALIAS,
+    public  static final String KEY_ALIAS = "SelcomRemoteKey";
                 KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY)
             .setKeySize(2048)
             .setCertificateSubject(new X500Principal("CN=SelcomRemote"))
