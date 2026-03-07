@@ -43,16 +43,14 @@ public class PairingActivity extends AppCompatActivity {
             try {
                 rp = new RemoteProtocol();
                 rp.connectForPairing(host);
+                rp.sendRemoteConfigure();
+                rp.readAndDiscard();
                 rp.sendPairingRequest();
-                rp.readAndDiscard();
-                rp.sendPairingOptions();
-                rp.readAndDiscard();
-                rp.sendPairingConfig();
                 rp.readAndDiscard();
                 mh.post(() -> {
                     progress.setVisibility(View.GONE);
                     keyboardArea.setVisibility(View.VISIBLE);
-                    Toast.makeText(this, "הטלוויזיה מציגה קוד – הזן אותו", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "הטלוויזיה מציגה קוד - הזן אותו", Toast.LENGTH_LONG).show();
                 });
             } catch (Exception e) {
                 mh.post(() -> {
