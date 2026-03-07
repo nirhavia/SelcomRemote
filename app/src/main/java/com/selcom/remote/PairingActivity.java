@@ -36,6 +36,7 @@ public class PairingActivity extends AppCompatActivity {
         startHandshake();
     }
 
+    // Mirrors TvPairing.start(): connect -> PairingRequest -> Options -> Config -> show PIN
     private void startHandshake() {
         progress.setVisibility(View.VISIBLE);
         keyboardArea.setVisibility(View.GONE);
@@ -43,10 +44,9 @@ public class PairingActivity extends AppCompatActivity {
             try {
                 rp = new RemoteProtocol();
                 rp.connectForPairing(host);
-                rp.sendRemoteConfigure();
-                rp.readAndDiscard();
-                rp.sendPairingRequest();
-                rp.readAndDiscard();
+                rp.sendPairingRequest(); rp.readAndDiscard();
+                rp.sendPairingOptions(); rp.readAndDiscard();
+                rp.sendPairingConfig();  rp.readAndDiscard();
                 mh.post(() -> {
                     progress.setVisibility(View.GONE);
                     keyboardArea.setVisibility(View.VISIBLE);
