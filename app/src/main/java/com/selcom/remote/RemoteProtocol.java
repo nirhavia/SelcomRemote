@@ -187,8 +187,18 @@ public class RemoteProtocol implements Closeable {
         return ok;
     }
 
+    public void sendRemoteStart() throws Exception {
+        sendMsg(new byte[]{34, 2, 8, 1});
+        Log.d(TAG, "-> RemoteStart");
+    }
+
+    public void sendKeepalive() throws Exception {
+        out.write(new byte[]{48, 1});
+        out.flush();
+    }
+
     public synchronized void sendKeyCode(int kc) throws Exception {
-        sendMsg(new byte[]{34, 4, 8, (byte)kc, 16, 3});
+        sendMsg(new byte[]{42, 4, 8, (byte)kc, 16, 3});
     }
 
     public void sendPingResponse(int v) throws Exception {
@@ -227,3 +237,158 @@ public class RemoteProtocol implements Closeable {
     public boolean isConnected() { return sock!=null && !sock.isClosed() && sock.isConnected(); }
     @Override public void close() { try { if (sock!=null) sock.close(); } catch (IOException ignored) {} }
 }
+')
+push('app/src/main/java/com/selcom/remote/PairingActivity.java', 'package com.selcom.remote;
+import android.content.*;
+import android.os.*;
+import android.view.*;
+import android.widget.*;
+import androidx.appcompat.app.AppCompatActivity;
+import java.util.concurrent.*;
+
+public class PairingActivity extends AppCompatActivity {
+    public static final String EXTRA_HOST = "host";
+    private String host;
+    private final StringBuilder code = new StringBuilder();
+    private TextView tvCode;
+    private Button btnPair;
+    private ProgressBar progress;
+    private View keyboardArea;
+    private volatile RemoteProtocol rp;
+    private final ExecutorService ex = Executors.newSingleThreadExecutor();
+    private final Handler mh = new Handler(Looper.getMainLooper());
+
+    @Override protected void onCreate(Bundle b) {
+        super.onCreate(b);
+        setContentView(R.layout.activity_pairing);
+        host = getIntent().getStringExtra(EXTRA_HOST);
+        if (host == null) { finish(); return; }
+        tvCode       = findViewById(R.id.tv_pairing_code);
+        btnPair      = findViewById(R.id.btn_submit_pair);
+        progress     = findViewById(R.id.pairing_progress);
+        keyboardArea = findViewById(R.id.keyboard_scroll);
+        buildKeyboard();
+        updateDisplay();
+        btnPair.setOnClickListener(v -> { if (code.length() == 6) doSendSecret(); });
+        findViewById(R.id.btn_delete).setOnClickListener(v -> {
+            if (code.length() > 0) { code.deleteCharAt(code.length()-1); updateDisplay(); }
+        });
+        startHandshake();
+    }
+
+    // Mirrors TvPairing.start(): connect -> PairingRequest -> Options -> Config -> show PIN
+    private void startHandshake() {
+        progress.setVisibility(View.VISIBLE);
+        keyboardArea.setVisibility(View.GONE);
+        ex.submit(() -> {
+            try {
+                rp = new RemoteProtocol();
+                rp.connectForPairing(host);
+                rp.sendPairingRequest(); rp.readAndDiscard();
+                rp.sendPairingOptions(); rp.readAndDiscard();
+                rp.sendPairingConfig();  rp.readAndDiscard();
+                mh.post(() -> {
+                    progress.setVisibility(View.GONE);
+                    keyboardArea.setVisibility(View.VISIBLE);
+                    Toast.makeText(this, "הטלוויזיה מציגה קוד - הזן אותו", Toast.LENGTH_LONG).show();
+                });
+            } catch (Exception e) {
+                mh.post(() -> {
+                    progress.setVisibility(View.GONE);
+                    Toast.makeText(this, "שגיאת חיבור: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    finish();
+                });
+            }
+        });
+    }
+
+    private void doSendSecret() {
+        String pc = code.toString().toUpperCase();
+        progress.setVisibility(View.VISIBLE);
+        keyboardArea.setVisibility(View.GONE);
+        btnPair.setEnabled(false);
+        ex.submit(() -> {
+            try {
+                boolean ok = rp.sendPairingSecret(pc);
+                mh.post(() -> {
+                    progress.setVisibility(View.GONE);
+                    if (ok) {
+                        getSharedPreferences(RemoteService.PREF_FILE, MODE_PRIVATE).edit()
+                            .putBoolean(RemoteService.PREF_PAIRED, true)
+                            .putString(RemoteService.PREF_HOST, host).apply();
+                        Toast.makeText(this, "הצימוד הצליח!", Toast.LENGTH_SHORT).show();
+                        startService(new Intent(this, RemoteService.class)
+                            .setAction(RemoteService.ACTION_CONNECT)
+                            .putExtra(RemoteService.EXTRA_HOST, host));
+                        startActivity(new Intent(this, MainActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
+                        finish();
+                    } else {
+                        code.setLength(0); updateDisplay();
+                        keyboardArea.setVisibility(View.VISIBLE);
+                        Toast.makeText(this, "קוד שגוי - נסה שוב", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            } catch (Exception e) {
+                mh.post(() -> {
+                    progress.setVisibility(View.GONE);
+                    keyboardArea.setVisibility(View.VISIBLE);
+                    Toast.makeText(this, "שגיאה: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void buildKeyboard() {
+        LinearLayout container = findViewById(R.id.keyboard_container);
+        float dp = getResources().getDisplayMetrics().density;
+        int h = (int)(58 * dp);
+        String[] rows = { "1234567890", "ABCDEF" };
+        for (String row : rows) {
+            LinearLayout rl = new LinearLayout(this);
+            rl.setOrientation(LinearLayout.HORIZONTAL);
+            rl.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            rl.setGravity(Gravity.CENTER);
+            for (char c : row.toCharArray()) {
+                Button btn = new Button(this);
+                btn.setText(String.valueOf(c));
+                btn.setTextSize(20f);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, h);
+                lp.weight = 1; lp.setMargins(3, 3, 3, 3);
+                btn.setLayoutParams(lp);
+                btn.setOnClickListener(v -> {
+                    if (code.length() < 6) { code.append(c); updateDisplay(); }
+                });
+                rl.addView(btn);
+            }
+            container.addView(rl);
+        }
+    }
+
+    private void updateDisplay() {
+        StringBuilder d = new StringBuilder(code);
+        for (int i = code.length(); i < 6; i++) d.append(\'_\');
+        tvCode.setText(d.toString());
+        btnPair.setEnabled(code.length() == 6);
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        ex.shutdownNow();
+        if (rp != null) rp.close();
+    }
+}
+')
+push('app/src/main/java/com/selcom/remote/CertUtils.java', 'package com.selcom.remote;
+import android.util.Log;
+public class CertUtils {
+    private static final String TAG = "CertUtils";
+    public static final String KEY_ALIAS = "SelcomRemoteKey";
+    public static void ensureKeyExists() {
+        Log.d(TAG, "Using hardcoded cert in RemoteProtocol - no keystore needed");
+    }
+}
+')
+print('Done!')
+print(f'https://github.com/{REPO_OWNER}/{REPO_NAME}/actions')
