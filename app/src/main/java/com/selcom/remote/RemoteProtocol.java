@@ -188,7 +188,7 @@ public class RemoteProtocol implements Closeable {
     }
 
     public synchronized void sendKeyCode(int kc) throws Exception {
-        sendMsg(new byte[]{82, 5, 8, (byte)kc, 1, 16, 3});
+        sendMsg(new byte[]{34, 4, 8, (byte)kc, 16, 3});
     }
 
     public void sendPingResponse(int v) throws Exception {
