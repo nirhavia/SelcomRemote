@@ -41,14 +41,14 @@ public class PairingActivity extends AppCompatActivity {
         keyboardArea.setVisibility(View.GONE);
         ex.submit(() -> {
             try {
-                rp = new RemoteProtocol();   // no-arg constructor
+                rp = new RemoteProtocol();
                 rp.connectForPairing(host);
-                rp.sendPairingRequest();     // no args
+                rp.sendPairingRequest();
                 rp.readAndDiscard();
                 rp.sendPairingOptions();
                 rp.readAndDiscard();
                 rp.sendPairingConfig();
-                rp.readAndDiscard();         // after this TV shows code
+                rp.readAndDiscard();
                 mh.post(() -> {
                     progress.setVisibility(View.GONE);
                     keyboardArea.setVisibility(View.VISIBLE);
