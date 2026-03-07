@@ -122,6 +122,9 @@ public class RemoteService extends Service {
         else Log.w(TAG, "sendKey: not connected");
     }
 
+
+    public String getCurrentHost() { return currentHost; }
+
     public boolean isConnected() {
         return protocol != null && protocol.isConnected();
     }
