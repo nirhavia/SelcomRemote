@@ -1,22 +1,43 @@
 package com.selcom.remote;
 import android.util.Log;
 import java.io.*;
+import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.cert.Certificate;
+import java.security.interfaces.RSAPublicKey;
 import javax.net.ssl.*;
 
+/**
+ * Android TV Remote Protocol v2
+ *
+ * Pairing flow (port 6467):
+ *   1. sendPairingRequest()   → server ack
+ *   2. sendPairingOptions()   → server ack
+ *   3. sendPairingConfig()    → server ack → TV SHOWS CODE ON SCREEN
+ *   4. user enters code
+ *   5. sendPairingSecret(code) → returns true if OK
+ *
+ * Every PairingMessage must include:
+ *   field 1 (version) = 2
+ *   field 2 (status)  = 200 (STATUS_OK)
+ *
+ * Secret = SHA256(
+ *     removeLeadingZeros(clientPublicKey.modulus)  +
+ *     removeLeadingZeros(clientPublicKey.exponent) +
+ *     removeLeadingZeros(serverPublicKey.modulus)  +
+ *     removeLeadingZeros(serverPublicKey.exponent) +
+ *     hexStringToBytes(code)   // full 6-char hex → 3 bytes
+ * )
+ */
 public class RemoteProtocol implements Closeable {
-    private static final String TAG = "RemoteProtocol";
-    public static final int PORT_PAIRING = 6467;
-    public static final int PORT_REMOTE  = 6466;
-    private static final int STATUS_OK   = 200;
-    public  static final int DIR_SHORT   = 4;
-    private static final int FLD_PING    = 1;
-    private static final int FLD_PONG    = 2;
-    private static final int FLD_ACTIVE  = 3;
-    private static final int FLD_KEY     = 4;
+    private static final String TAG       = "RemoteProtocol";
+    public  static final int PORT_PAIRING = 6467;
+    public  static final int PORT_REMOTE  = 6466;
+    private static final int VERSION      = 2;
+    private static final int STATUS_OK    = 200;
+    public  static final int DIR_SHORT    = 4;
 
-    private SSLSocket socket;
+    private SSLSocket    socket;
     private InputStream  in;
     private OutputStream out;
     private final SSLContext sslContext;
@@ -34,63 +55,103 @@ public class RemoteProtocol implements Closeable {
         socket.startHandshake();
         in  = socket.getInputStream();
         out = socket.getOutputStream();
-        Log.d(TAG, "Connected");
+        Log.d(TAG, "Connected OK");
     }
 
-    // ── Pairing ────────────────────────────────────────────────────────────
-
-    // Step 1: send PairingRequest
-    // PairingMessage { status(1)=200, pairing_request(10)={ service_name(1), client_name(2) } }
+    // ── Step 1: Pairing Request ──────────────────────────────────────────────
+    // PairingMessage { version(1)=2, status(2)=200, pairing_request(10) = {
+    //   service_name(1)=..., client_name(2)=...
+    // }}
     public void sendPairingRequest(String serviceName, String clientName) throws IOException {
         byte[] inner = msg(strField(1, serviceName), strField(2, clientName));
-        sendFramed(msg(varintField(1, STATUS_OK), lenField(10, inner)));
-        Log.d(TAG, "Sent PairingRequest");
+        sendFramed(pairingMsg(lenField(10, inner)));
+        Log.d(TAG, "→ PairingRequest");
     }
 
-    // Read and discard any incoming PairingMessage
+    // ── Step 2: Pairing Options ──────────────────────────────────────────────
+    // PairingMessage { version(1)=2, status(2)=200, options(20) = {
+    //   preferred_encodings(1) = { type(1)=3(HEX), symbol_length(2)=6 },
+    //   preferred_role(2)=1(INPUT)
+    // }}
+    public void sendPairingOptions() throws IOException {
+        byte[] enc    = msg(varintField(1, 3), varintField(2, 6));  // type=HEXADECIMAL, len=6
+        byte[] optMsg = msg(lenField(1, enc),  varintField(2, 1));  // role=INPUT
+        sendFramed(pairingMsg(lenField(20, optMsg)));
+        Log.d(TAG, "→ PairingOptions");
+    }
+
+    // ── Step 3: Pairing Configuration → TV shows code on screen ─────────────
+    // PairingMessage { version(1)=2, status(2)=200, configuration(30) = {
+    //   encoding(1) = { type(1)=3(HEX), symbol_length(2)=6 },
+    //   preferred_role(2)=1(INPUT)
+    // }}
+    public void sendPairingConfig() throws IOException {
+        byte[] enc    = msg(varintField(1, 3), varintField(2, 6));
+        byte[] cfgMsg = msg(lenField(1, enc),  varintField(2, 1));
+        sendFramed(pairingMsg(lenField(30, cfgMsg)));
+        Log.d(TAG, "→ PairingConfig  (TV should show code now)");
+    }
+
+    // Read and discard server ack
     public void readAndDiscard() throws IOException {
         byte[] d = readFramed();
-        Log.d(TAG, "Got pairing msg len=" + d.length);
+        Log.d(TAG, "← server ack len=" + d.length);
     }
 
-    // Step 3: send PairingOptions → TV will show the code on screen
-    // PairingMessage { status(1)=200, options(20)={ preferred_encodings(1)={ type(3)=3, symbol_length(4)=6 }, preferred_role(2)=1 } }
-    public void sendPairingOptions() throws IOException {
-        byte[] enc    = msg(varintField(3, 3), varintField(4, 6));   // HEXADECIMAL, 6 chars
-        byte[] optMsg = msg(lenField(1, enc),  varintField(2, 1));   // role=INPUT
-        sendFramed(msg(varintField(1, STATUS_OK), lenField(20, optMsg)));
-        Log.d(TAG, "Sent PairingOptions");
-    }
-
-    // Step 5: send secret
-    // IMPORTANT: code is hex → convert to bytes BEFORE SHA256
-    // secret = SHA256( client_cert_DER + server_cert_DER + hexToBytes(code) )
+    // ── Step 5: Send secret ──────────────────────────────────────────────────
+    // secret = SHA256(clientMod + clientExp + serverMod + serverExp + hexToBytes(code))
+    // PairingMessage { version(1)=2, status(2)=200, secret(40) = { secret(1)=bytes } }
     public boolean sendPairingSecret(String hexCode) throws Exception {
         Certificate[] lc = socket.getSession().getLocalCertificates();
         Certificate[] sc = socket.getSession().getPeerCertificates();
         if (lc == null || lc.length == 0) throw new Exception("No local cert");
 
+        RSAPublicKey clientKey = (RSAPublicKey) lc[0].getPublicKey();
+        RSAPublicKey serverKey = (RSAPublicKey) sc[0].getPublicKey();
+
+        byte[] clientMod = trimLeadingZeros(clientKey.getModulus().toByteArray());
+        byte[] clientExp = trimLeadingZeros(clientKey.getPublicExponent().toByteArray());
+        byte[] serverMod = trimLeadingZeros(serverKey.getModulus().toByteArray());
+        byte[] serverExp = trimLeadingZeros(serverKey.getPublicExponent().toByteArray());
         byte[] codeBytes = hexStringToBytes(hexCode);
-        Log.d(TAG, "Code bytes len=" + codeBytes.length + " from code=" + hexCode);
+
+        Log.d(TAG, "secret input: clientMod[" + clientMod.length + "] clientExp[" + clientExp.length
+                + "] serverMod[" + serverMod.length + "] serverExp[" + serverExp.length
+                + "] code=" + hexCode + " codeBytes[" + codeBytes.length + "]");
 
         MessageDigest sha = MessageDigest.getInstance("SHA-256");
-        sha.update(lc[0].getEncoded());
-        sha.update(sc[0].getEncoded());
+        sha.update(clientMod);
+        sha.update(clientExp);
+        sha.update(serverMod);
+        sha.update(serverExp);
         sha.update(codeBytes);
         byte[] secret = sha.digest();
 
-        // PairingMessage { status(1)=200, secret(40)={ secret(1)=bytes } }
-        sendFramed(msg(varintField(1, STATUS_OK), lenField(40, lenField(1, secret))));
-        Log.d(TAG, "Sent PairingSecret");
+        // PairingSecretMessage { secret(1)=bytes }
+        sendFramed(pairingMsg(lenField(40, lenField(1, secret))));
+        Log.d(TAG, "→ PairingSecret code=" + hexCode);
 
         byte[] ack = readFramed();
-        long status = parseVarintField(ack, 1);
-        Log.d(TAG, "SecretAck status=" + status);
+        long status = parseVarintField(ack, 2);  // field 2 = status
+        Log.d(TAG, "← PairingSecretAck status=" + status);
         return status == STATUS_OK;
     }
 
-    // Convert hex string like "A1B2C3" → byte[] { 0xA1, 0xB2, 0xC3 }
-    private static byte[] hexStringToBytes(String hex) {
+    // Build PairingMessage wrapper: { version(1)=2, status(2)=200, ...payload }
+    private static byte[] pairingMsg(byte[] payload) {
+        return msg(varintField(1, VERSION), varintField(2, STATUS_OK), payload);
+    }
+
+    private static byte[] trimLeadingZeros(byte[] b) {
+        int start = 0;
+        while (start < b.length - 1 && b[start] == 0) start++;
+        byte[] r = new byte[b.length - start];
+        System.arraycopy(b, start, r, 0, r.length);
+        return r;
+    }
+
+    private static byte[] hexStringToBytes(String hex) throws Exception {
+        hex = hex.toUpperCase().replaceAll("[^0-9A-F]", "");
         if (hex.length() % 2 != 0) hex = "0" + hex;
         byte[] result = new byte[hex.length() / 2];
         for (int i = 0; i < result.length; i++) {
@@ -99,18 +160,18 @@ public class RemoteProtocol implements Closeable {
         return result;
     }
 
-    // ── Remote ────────────────────────────────────────────────────────────
+    // ── Remote Control ────────────────────────────────────────────────────────
 
     public void sendSetActive(boolean active) throws IOException {
-        sendFramed(msg(lenField(FLD_ACTIVE, msg(varintField(1, active ? 1 : 0)))));
+        sendFramed(msg(lenField(3, msg(varintField(1, active ? 1 : 0)))));
     }
 
     public synchronized void sendKeyCode(int kc) throws IOException {
-        sendFramed(msg(lenField(FLD_KEY, msg(varintField(1, kc), varintField(2, DIR_SHORT)))));
+        sendFramed(msg(lenField(4, msg(varintField(1, kc), varintField(2, DIR_SHORT)))));
     }
 
     public void sendPingResponse(int v) throws IOException {
-        sendFramed(msg(lenField(FLD_PONG, msg(varintField(1, v)))));
+        sendFramed(msg(lenField(2, msg(varintField(1, v)))));
     }
 
     public byte[] readRemoteMessage() throws IOException { return readFramed(); }
@@ -123,11 +184,11 @@ public class RemoteProtocol implements Closeable {
     }
 
     public int parsePingValue(byte[] data) {
-        byte[] inner = parseEmbedded(data, FLD_PING);
+        byte[] inner = parseEmbedded(data, 1);
         return inner == null ? 0 : (int) parseVarintField(inner, 1);
     }
 
-    // ── Framing ───────────────────────────────────────────────────────────
+    // ── Framing ───────────────────────────────────────────────────────────────
 
     private void sendFramed(byte[] data) throws IOException {
         byte[] f = new byte[2 + data.length];
@@ -135,6 +196,7 @@ public class RemoteProtocol implements Closeable {
         f[1] = (byte)(data.length & 0xFF);
         System.arraycopy(data, 0, f, 2, data.length);
         out.write(f); out.flush();
+        Log.d(TAG, "sent " + (2+data.length) + " bytes");
     }
 
     private byte[] readFramed() throws IOException {
@@ -146,7 +208,7 @@ public class RemoteProtocol implements Closeable {
         return buf;
     }
 
-    // ── Protobuf helpers ──────────────────────────────────────────────────
+    // ── Protobuf helpers ──────────────────────────────────────────────────────
 
     private static byte[] msg(byte[]... fields) {
         int t = 0; for (byte[] f : fields) t += f.length;
