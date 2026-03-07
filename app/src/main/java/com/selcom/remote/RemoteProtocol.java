@@ -166,6 +166,9 @@ public class RemoteProtocol implements Closeable {
         }
         return null;
     }
+    public int readPairingMessageType() throws java.io.IOException {
+        readAndDiscard(); return 0;
+    }
     public boolean isConnected(){return socket!=null&&!socket.isClosed()&&socket.isConnected();}
     @Override public void close(){try{if(socket!=null)socket.close();}catch(IOException ignored){}}
 }
