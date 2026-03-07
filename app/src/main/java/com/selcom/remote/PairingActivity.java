@@ -37,7 +37,6 @@ public class PairingActivity extends AppCompatActivity {
         LinearLayout container = findViewById(R.id.keyboard_container);
         float dp = getResources().getDisplayMetrics().density;
         int h = (int)(58 * dp);
-        // digits row + hex letters row (no duplicates)
         String[] rows = { "1234567890", "ABCDEF" };
         for (String row : rows) {
             LinearLayout rl = new LinearLayout(this);
@@ -80,9 +79,10 @@ public class PairingActivity extends AppCompatActivity {
                 RemoteProtocol rp = new RemoteProtocol(ssl);
                 rp.connectForPairing(host);
                 rp.sendPairingRequest("androidtvremote2", "SelcomRemote");
-                rp.readAndDiscard(); // PairingRequestAck
-                rp.sendPairingOptions(); // TV shows code here
-                rp.readAndDiscard(); // PairingOptionsAck
+                rp.readAndDiscard();        // PairingRequestAck
+                rp.sendPairingOptions();    // TV shows code here
+                rp.readAndDiscard();        // PairingOptionsAck
+                // Now user enters code from TV, then:
                 boolean ok = rp.sendPairingSecret(pc);
                 rp.close();
                 mh.post(() -> {
