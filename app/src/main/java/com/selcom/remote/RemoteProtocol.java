@@ -193,12 +193,11 @@ public class RemoteProtocol implements Closeable {
     }
 
     public void sendKeepalive() throws Exception {
-        out.write(new byte[]{48, 1});
-        out.flush();
+        out.write(new byte[]{48, 1}); out.flush();
     }
 
     public synchronized void sendKeyCode(int kc) throws Exception {
-        sendMsg(new byte[]{42, 4, 8, (byte)kc, 16, 3});
+        sendMsg(new byte[]{34, 4, 8, (byte)kc, 16, 3});
     }
 
     public void sendPingResponse(int v) throws Exception {
