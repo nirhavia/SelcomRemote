@@ -36,7 +36,6 @@ public class PairingActivity extends AppCompatActivity {
         startHandshake();
     }
 
-    // Mirrors TvPairing.start(): connect -> PairingRequest -> Options -> Config -> show PIN
     private void startHandshake() {
         progress.setVisibility(View.VISIBLE);
         keyboardArea.setVisibility(View.GONE);
@@ -135,7 +134,10 @@ public class PairingActivity extends AppCompatActivity {
 
     @Override protected void onDestroy() {
         super.onDestroy();
-        ex.shutdownNow();
-        if (rp != null) rp.close();
+        // MUST close socket on background thread - SSL close does network I/O
+        final RemoteProtocol toClose = rp;
+        rp = null;
+        ex.submit(() -> { if (toClose != null) toClose.close(); });
+        ex.shutdown();
     }
 }
