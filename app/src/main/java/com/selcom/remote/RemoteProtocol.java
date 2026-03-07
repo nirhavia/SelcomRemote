@@ -1,295 +1,227 @@
 package com.selcom.remote;
 import android.util.Log;
 import java.io.*;
-import java.security.KeyStore;
-import java.security.MessageDigest;
-import java.security.cert.Certificate;
+import java.math.BigInteger;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.security.*;
+import java.security.cert.*;
 import java.security.interfaces.RSAPublicKey;
+import java.security.spec.PKCS8EncodedKeySpec;
 import javax.net.ssl.*;
 
-/**
- * Android TV Remote Protocol v2  –  exact bytes per wiki documentation
- *
- * Ports (from docs, do NOT swap):
- *   6467 = PAIRING
- *   6466 = REMOTE CONTROL
- *
- * Pairing flow:
- *   1. sendPairingRequest()  → readAndDiscard()
- *   2. sendPairingOptions()  → readAndDiscard()
- *   3. sendPairingConfig()   → readAndDiscard()  ← TV shows code NOW
- *   4. user enters 6-char hex code
- *   5. sendPairingSecret(code)   uses LAST 4 chars: code[2..5]
- *
- * Secret = SHA256(clientMod + clientExp + serverMod + serverExp + hexToBytes(code[2..5]))
- *   Client cert comes from AndroidKeyStore directly (NOT from SSL session —
- *   the TV may not request client auth during handshake).
- *   Server cert comes from socket.getSession().getPeerCertificates()[0].
- *
- * Framing: 2-byte big-endian length prefix before every message.
- * Pong: raw bytes only, NO size prefix.
- */
 public class RemoteProtocol implements Closeable {
-    private static final String TAG       = "RemoteProtocol";
-    public  static final int PORT_PAIRING = 6467;   // pairing  (docs: "port 6467")
-    public  static final int PORT_REMOTE  = 6466;   // commands (docs: "port 6466")
-    private static final int VERSION      = 2;
-    private static final int STATUS_OK    = 200;
-    public  static final int DIR_SHORT    = 4;
+    private static final String TAG = "RemoteProtocol";
+    public  static final int PORT_PAIRING = 6467;
+    public  static final int PORT_REMOTE  = 6466;
 
-    private SSLSocket    socket;
+    private static final String KEY_HEX =
+        "308204bf020100300d06092a864886f70d0101010500048204a9308204a50201000282010100ca79"
+        + "3cb2499677079b4bec0c41c29505b7133cbed5402ca235c2d29d6d2ab32b8f93b4ccd93d7a41c241"
+        + "5cd3326579204804ba2206b43a1486645b6bafd0c10b48cb0253ef1f7e160df42ed1fdbc04f852fe"
+        + "43589d44fcc59a96a925394c084286a96ada23ce3c7222b77c9eb98f82ae08b100c3a635a6a43004"
+        + "3c812c0cc113abe2dc8bcee0bec2b9b4bd0a141df5284019940ceca75780363d8d10a084e7d93ee2"
+        + "b716e751d407738ca8a47698a57f8504473605183e43594c1da43b062f1044ac5e50f394e527a6eb"
+        + "876033634ad07f679e1a0879b63c1052f8103f42e31dbcfd9ccf9de1b642b50d611e7884b96fa80f"
+        + "f331790870eaa8e442f09dba93a502030100010282010009784eadb311e9cace0968c6b0fbb21f24"
+        + "8f2e87e96ef9377406c2f59081cf040250e103b4c47297a94787d92bf2018e9037c261ed88d7ef96"
+        + "5292d11055d5f59a67be59e1250aaf6ae3291e72bcecc9958e2565bb635ae43e24fe4fcaa482fd63"
+        + "91807927f41131306cff13e86f6d2809298834de6d037889f364c610e29ed42084c4c51f33e119de"
+        + "4114f73241f3c231cd27a74d34bfb88b36b25919c8d9ff585d9d7710ae799c3679eb7d95d16357ca"
+        + "a3f510e5aa01e7a61baf5e982e225196c0cd7d7cc58975d3fbbb5f6077e3a1bb2364d2719b075d90"
+        + "4f6fd267b3353ea7b2991c3d6af8e4fe58fc12786b4c84103adab168ba72d92c0eac96064fbf7902"
+        + "818100ffbe83234a9a8feca20562e3ae6e8a95b8e096741339b340e6dc87ccf4ad20c32043a9a11a"
+        + "fefa1682efdf35a0a98bd45ccb6e0fae85006fda1e5815d8ee3fc2e0ae154f4ab1aaad8db4c64a7e"
+        + "77e9d3ed986a5e350fa368a374d0430f4340290de93860ce607f198c8027a65fdffd509dee6b5796"
+        + "e899d9d8a6eccde81da41d02818100caad157f51af08ab580f4b6d8397bce860e6a592ee6db5d84c"
+        + "2a150b89701c1712138293d4c1673c6938770b0c8e652c76a4fc3d2e8413d33411bb982686e311c0"
+        + "ea332f323ff9b3353538a14c2ac7d932d1c606e9dc9e8ab58c5c4e180a6a32585386b58c06bb99b8"
+        + "0910d7892e4ae2480b726833db845508a0556e1230872902818100c24c7c975073d34ae5e18fbb09"
+        + "684473f1ecf781a2a5a0d17b542afc851c0f9b0fa5387804e99919874b34db2a8005934718eb3a90"
+        + "cdcd822d4606883ab2efd060210261a68f0aec26902462ae68ee46abe9b34e75a3b6f3a5d3f6f22b"
+        + "e35d1893d00f9c44cf3d612cc4a4db1b5632bf8fed76b22a1df7dd716388dffb2ca1e5028181009e"
+        + "1ffa04b27b081d7e7fb84e81fb91b40f5e03d225d94ca5ab8ead8aa9b8e10192e5cbdb808340031e"
+        + "e8a1dfe9f4f2b4850065976a423ba16d1f64a7e96f159b9552638aaffebfd6f46d4878778f6d0a65"
+        + "1ecb0c3bcb179a8ad82e6ff34bb4dd00927228144e707116e763cf7544bbc1dd89a8c1e9ab9b8c28"
+        + "45c7413049d2390281810099d5e2b7890b75218494a90c3579bbdffa2721a35fad52bd5168c525ea"
+        + "1d300c9129cf5a9932144463d0d64746bd8dc27a334e5027875b2cf7d40852faf79bb724a3cc1cc2"
+        + "fa6c312d1a08af28dc68653d656cfab994daa38ad373cdf9a7f272343f8730abffcf519744e2ba74"
+        + "3f8a07326e614bc068182f4147e420d3594696";
+    private static final String CERT_HEX =
+        "308202b33082019ba0030201020213572f1ce3a87df8fe71b9213fa381f1a0d02e25300d06092a86"
+        + "4886f70d01010b050030143112301006035504030c0961747672656d6f7465301e170d3233303130"
+        + "313030303030305a170d3335303130313030303030305a30143112301006035504030c0961747672"
+        + "656d6f746530820122300d06092a864886f70d01010105000382010f003082010a0282010100ca79"
+        + "3cb2499677079b4bec0c41c29505b7133cbed5402ca235c2d29d6d2ab32b8f93b4ccd93d7a41c241"
+        + "5cd3326579204804ba2206b43a1486645b6bafd0c10b48cb0253ef1f7e160df42ed1fdbc04f852fe"
+        + "43589d44fcc59a96a925394c084286a96ada23ce3c7222b77c9eb98f82ae08b100c3a635a6a43004"
+        + "3c812c0cc113abe2dc8bcee0bec2b9b4bd0a141df5284019940ceca75780363d8d10a084e7d93ee2"
+        + "b716e751d407738ca8a47698a57f8504473605183e43594c1da43b062f1044ac5e50f394e527a6eb"
+        + "876033634ad07f679e1a0879b63c1052f8103f42e31dbcfd9ccf9de1b642b50d611e7884b96fa80f"
+        + "f331790870eaa8e442f09dba93a50203010001300d06092a864886f70d01010b0500038201010007"
+        + "aee5f8804ef15b046869a94d65bd0ac48d4c4b094874997704dc1b3c069ab070787062ffd37c2b37"
+        + "92d3f178f08314b925353f8a1db397427e062eeea7513ec03341cbdc7d7b15935580fad4739890c0"
+        + "a147e19a9f3cdbd6029ca8ff424f038d7363a06584a58c4a0c7363dfb0c09a06a7e1b5d5a46f23d8"
+        + "5c842582f2b28d879ecc2d1e12a85696d7e54d48b59b4a0f2fb1ad50887267f62d899e60aca8f55c"
+        + "1cc175533558af8afd924ae0be17a199d00398457a0e674c80bfe07acba1504f60cbd8065dfdb759"
+        + "058e8cab69b6042c3c71f73909d504d615d3786bd07f93b33e3d7333ce5f7d5b80f7610be1e9fe0b"
+        + "69963ba758157b8088098f667ce1f8";
+
+    private SSLSocket sock;
     private InputStream  in;
     private OutputStream out;
-    private final SSLContext sslContext;
+    private X509Certificate clientCert;
 
-    public RemoteProtocol(SSLContext ctx) { this.sslContext = ctx; }
+    public RemoteProtocol() {}
 
-    public void connectForPairing(String host) throws IOException { connect(host, PORT_PAIRING, 60000); }
-    public void connectForRemote(String host)  throws IOException { connect(host, PORT_REMOTE,  35000); }
-
-    private void connect(String host, int port, int timeout) throws IOException {
-        Log.d(TAG, "Connecting " + host + ":" + port);
-        SSLSocketFactory f = sslContext.getSocketFactory();
-        socket = (SSLSocket) f.createSocket(host, port);
-        socket.setSoTimeout(timeout);
-
-        // Enable all TLS versions — the TV box may only support TLS 1.0/1.1
-        try {
-            String[] supported = socket.getSupportedProtocols();
-            java.util.List<String> wanted = new java.util.ArrayList<>();
-            for (String p : supported) {
-                if (p.startsWith("TLS")) wanted.add(p);
-            }
-            socket.setEnabledProtocols(wanted.toArray(new String[0]));
-        } catch (Exception ignored) {}
-
-        socket.startHandshake();
-        in  = socket.getInputStream();
-        out = socket.getOutputStream();
-        Log.d(TAG, "Connected OK on port " + port);
+    private static byte[] fromHex(String h) {
+        byte[] b = new byte[h.length() / 2];
+        for (int i = 0; i < h.length(); i += 2)
+            b[i/2] = (byte) Integer.parseInt(h.substring(i, i+2), 16);
+        return b;
     }
 
-    // ── Step 1: PairingRequest ────────────────────────────────────────────────
-    // Exact bytes: [8,2,16,200,1, 82,len, 10,lenSvc,SVC_BYTES, 18,lenName,NAME_BYTES]
-    public void sendPairingRequest(String svc, String client) throws IOException {
-        byte[] inner = msg(strField(1, svc), strField(2, client));
-        sendFramed(pairingMsg(lenField(10, inner)));
+    private SSLContext buildSSLContext() throws Exception {
+        byte[] keyBytes  = fromHex(KEY_HEX);
+        byte[] certBytes = fromHex(CERT_HEX);
+        PrivateKey privKey = KeyFactory.getInstance("RSA")
+            .generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
+        clientCert = (X509Certificate) CertificateFactory.getInstance("X.509")
+            .generateCertificate(new ByteArrayInputStream(certBytes));
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        ks.load(null, null);
+        ks.setKeyEntry("k", privKey, new char[0], new X509Certificate[]{clientCert});
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(ks, new char[0]);
+        SSLContext ssl = SSLContext.getInstance("TLS");
+        ssl.init(kmf.getKeyManagers(), new TrustManager[]{
+            new X509TrustManager() {
+                public void checkClientTrusted(X509Certificate[] c, String a) {}
+                public void checkServerTrusted(X509Certificate[] c, String a) {}
+                public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+            }
+        }, new SecureRandom());
+        return ssl;
+    }
+
+    private void openSocket(String host, int port, int timeoutMs) throws Exception {
+        SSLContext ssl = buildSSLContext();
+        sock = (SSLSocket) ssl.getSocketFactory().createSocket();
+        sock.setEnabledProtocols(sock.getSupportedProtocols());
+        sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
+        sock.connect(new InetSocketAddress(host, port), timeoutMs);
+        sock.setSoTimeout(60000);
+        sock.startHandshake();
+        in  = sock.getInputStream();
+        out = sock.getOutputStream();
+        Log.d(TAG, "Connected port=" + port);
+    }
+
+    public void connectForPairing(String host) throws Exception { openSocket(host, PORT_PAIRING, 5000); }
+    public void connectForRemote(String host)  throws Exception { openSocket(host, PORT_REMOTE,  5000); sock.setSoTimeout(35000); }
+
+    public void sendRemoteConfigure() throws Exception {
+        byte[] model  = protoStr(1, "SelcomRemote");
+        byte[] vendor = protoStr(2, "DIY");
+        byte[] di     = concat(model, vendor);
+        byte[] cfg    = protoBytes(1, di);
+        sendMsg(protoBytes(1, cfg));
+        Log.d(TAG, "-> RemoteConfigure");
+    }
+
+    public void sendPairingRequest() throws Exception {
+        byte[] pr = protoStr(1, "SelcomRemote");
+        sendMsg(protoBytes(2, pr));
         Log.d(TAG, "-> PairingRequest");
     }
 
-    // ── Step 2: PairingOptions ────────────────────────────────────────────────
-    // Exact bytes: [8,2,16,200,1, 162,1,8, 10,4,8,3,16,6, 24,1]
-    //   field 20 { encoding(field1){type=3,symLen=6}, preferred_role(field3)=1 }
-    public void sendPairingOptions() throws IOException {
-        byte[] enc    = msg(varintField(1, 3), varintField(2, 6));
-        byte[] optMsg = msg(lenField(1, enc), varintField(3, 1));  // field 3 for role
-        sendFramed(pairingMsg(lenField(20, optMsg)));
-        Log.d(TAG, "-> PairingOptions");
+    public void readAndDiscard() throws Exception {
+        byte[] d = readMsg();
+        Log.d(TAG, "<- ack len=" + d.length);
     }
 
-    // ── Step 3: PairingConfiguration ─────────────────────────────────────────
-    // Exact bytes: [8,2,16,200,1, 242,1,8, 10,4,8,3,16,6, 16,1]
-    //   field 30 { encoding(field1){type=3,symLen=6}, preferred_role(field2)=1 }
-    // TV shows 6-char hex code on screen after server acks this.
-    public void sendPairingConfig() throws IOException {
-        byte[] enc    = msg(varintField(1, 3), varintField(2, 6));
-        byte[] cfgMsg = msg(lenField(1, enc), varintField(2, 1));  // field 2 for role
-        sendFramed(pairingMsg(lenField(30, cfgMsg)));
-        Log.d(TAG, "-> PairingConfig (TV should show code)");
-    }
-
-    public void readAndDiscard() throws IOException {
-        byte[] d = readFramed();
-        Log.d(TAG, "<- ack " + d.length + " bytes");
-    }
-
-    // ── Step 5: PairingSecret ─────────────────────────────────────────────────
-    // Exact bytes: [8,2,16,200,1, 194,2,34, 10,32, SHA256_32_BYTES]
-    // Secret = SHA256(clientMod + clientExp + serverMod + serverExp + hexToBytes(code[2..5]))
-    // Client cert: from AndroidKeyStore directly (TV may not request client cert during TLS)
-    // Server cert: from socket TLS session
-    public boolean sendPairingSecret(String hexCode) throws Exception {
-        // Client cert from Keystore (NOT from SSL session — may be null)
-        KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-        ks.load(null);
-        Certificate clientCert = ks.getCertificate(CertUtils.KEY_ALIAS);
-        if (clientCert == null) throw new Exception("Client cert not in Keystore");
-
-        // Server cert from TLS session
-        Certificate[] peerCerts = socket.getSession().getPeerCertificates();
-        if (peerCerts == null || peerCerts.length == 0) throw new Exception("No server cert");
-        Certificate serverCert = peerCerts[0];
-
-        RSAPublicKey ck = (RSAPublicKey) clientCert.getPublicKey();
-        RSAPublicKey sk = (RSAPublicKey) serverCert.getPublicKey();
-
-        // Last 4 chars of 6-char code: substr(code, 2, 4)
-        String code4 = hexCode.length() >= 6 ? hexCode.substring(2, 6) : hexCode;
-        byte[] codeBytes = hexStringToBytes(code4);
-
-        Log.d(TAG, "Secret: full=" + hexCode + " using last4=" + code4
-                + " clientMod[" + trim(ck.getModulus().toByteArray()).length + "]"
-                + " serverMod[" + trim(sk.getModulus().toByteArray()).length + "]");
-
+    public boolean sendPairingSecret(String pin) throws Exception {
+        X509Certificate srv = (X509Certificate) sock.getSession().getPeerCertificates()[0];
+        RSAPublicKey cPub = (RSAPublicKey) clientCert.getPublicKey();
+        RSAPublicKey sPub = (RSAPublicKey) srv.getPublicKey();
+        String last4 = pin.substring(Math.max(0, pin.length() - 4));
+        byte[] pinBytes = new byte[last4.length()];
+        for (int i = 0; i < last4.length(); i++)
+            pinBytes[i] = (byte) Character.getNumericValue(last4.charAt(i));
+        Log.d(TAG, "secret pin=" + pin + " last4=" + last4);
         MessageDigest sha = MessageDigest.getInstance("SHA-256");
-        sha.update(trim(ck.getModulus().toByteArray()));
-        sha.update(trim(ck.getPublicExponent().toByteArray()));
-        sha.update(trim(sk.getModulus().toByteArray()));
-        sha.update(trim(sk.getPublicExponent().toByteArray()));
-        sha.update(codeBytes);
+        sha.update(unsigned(cPub.getModulus()));
+        sha.update(unsigned(cPub.getPublicExponent()));
+        sha.update(unsigned(sPub.getModulus()));
+        sha.update(unsigned(sPub.getPublicExponent()));
+        sha.update(pinBytes);
         byte[] secret = sha.digest();
-
-        // Exact encoding: pairingMsg(field40 { field1 = secret_bytes })
-        sendFramed(pairingMsg(lenField(40, lenField(1, secret))));
+        byte[] ps = protoBytes(1, secret);
+        sendMsg(protoBytes(3, ps));
         Log.d(TAG, "-> PairingSecret");
-
-        byte[] ack = readFramed();
-        long status = parseVarintField(ack, 2);
-        Log.d(TAG, "<- SecretAck status=" + status);
-        return status == STATUS_OK;
+        byte[] ack = readMsg();
+        Log.d(TAG, "<- SecretAck len=" + ack.length);
+        return ack.length > 0;
     }
 
-    private static byte[] trim(byte[] b) {
-        int s = 0;
-        while (s < b.length - 1 && b[s] == 0) s++;
-        byte[] r = new byte[b.length - s];
-        System.arraycopy(b, s, r, 0, r.length);
-        return r;
+    public synchronized void sendKeyCode(int kc) throws Exception {
+        byte[] down = concat(protoVarint(1, kc), protoVarint(2, 1));
+        byte[] up   = concat(protoVarint(1, kc), protoVarint(2, 2));
+        sendMsg(protoBytes(5, down));
+        sendMsg(protoBytes(5, up));
     }
 
-    private static byte[] hexStringToBytes(String hex) throws Exception {
-        hex = hex.toUpperCase().replaceAll("[^0-9A-F]", "");
-        if (hex.length() % 2 != 0) hex = "0" + hex;
-        byte[] r = new byte[hex.length() / 2];
-        for (int i = 0; i < r.length; i++)
-            r[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
-        return r;
-    }
-
-    private static byte[] pairingMsg(byte[] payload) {
-        return msg(varintField(1, VERSION), varintField(2, STATUS_OK), payload);
-    }
-
-    // ── Remote Control ────────────────────────────────────────────────────────
-    public void sendSetActive(boolean a) throws IOException {
-        sendFramed(msg(lenField(3, msg(varintField(1, a ? 1 : 0)))));
-    }
-
-    public synchronized void sendKeyCode(int kc) throws IOException {
-        sendFramed(msg(lenField(4, msg(varintField(1, kc), varintField(2, DIR_SHORT)))));
-    }
-
-    // Pong: NO size prefix per docs ("no need to send the size")
-    public void sendPingResponse(int v) throws IOException {
-        byte[] pong = msg(lenField(2, msg(varintField(1, v))));
-        out.write(pong);
-        out.flush();
+    public void sendPingResponse(int v) throws Exception {
+        out.write(new byte[]{74, 2, 8, (byte)v}); out.flush();
         Log.d(TAG, "-> pong");
     }
 
-    public byte[] readRemoteMessage() throws IOException { return readFramed(); }
+    public byte[] readRemoteMessage() throws Exception { return readMsg(); }
+    public int parseOuterFieldNumber(byte[] d) { return d.length == 0 ? -1 : (d[0]&0xFF) >> 3; }
+    public int parsePingValue(byte[] d) { return d.length >= 4 ? d[3]&0xFF : 0; }
 
-    public int parseOuterFieldNumber(byte[] data) {
-        if (data.length == 0) return -1;
-        long tag = 0; int sh = 0;
-        for (byte b : data) { tag |= ((long)(b & 0x7F)) << sh; sh += 7; if ((b & 0x80) == 0) break; }
-        return (int)(tag >> 3);
+    private void sendMsg(byte[] msg) throws Exception {
+        ByteBuffer bb = ByteBuffer.allocate(4 + msg.length);
+        bb.putInt(msg.length);
+        bb.put(msg);
+        out.write(bb.array()); out.flush();
     }
 
-    public int parsePingValue(byte[] data) {
-        byte[] inner = parseEmbedded(data, 1);
-        return inner == null ? 0 : (int) parseVarintField(inner, 1);
-    }
-
-    // ── Framing ───────────────────────────────────────────────────────────────
-    // 2-byte big-endian length prefix
-    private void sendFramed(byte[] data) throws IOException {
-        byte[] f = new byte[2 + data.length];
-        f[0] = (byte)((data.length >> 8) & 0xFF);
-        f[1] = (byte)(data.length & 0xFF);
-        System.arraycopy(data, 0, f, 2, data.length);
-        out.write(f);
-        out.flush();
-        Log.d(TAG, "sent " + data.length + " bytes");
-    }
-
-    private byte[] readFramed() throws IOException {
-        byte[] lb = new byte[2]; int r = 0;
-        while (r < 2) { int n = in.read(lb, r, 2 - r); if (n < 0) throw new EOFException("EOF in header"); r += n; }
-        int len = ((lb[0] & 0xFF) << 8) | (lb[1] & 0xFF);
+    private byte[] readMsg() throws Exception {
+        byte[] lb = new byte[4]; int r = 0;
+        while (r < 4) { int n = in.read(lb, r, 4-r); if (n<0) throw new EOFException(); r+=n; }
+        int len = ByteBuffer.wrap(lb).getInt();
+        if (len < 0 || len > 65536) throw new IOException("bad len=" + len);
         byte[] buf = new byte[len]; r = 0;
-        while (r < len) { int n = in.read(buf, r, len - r); if (n < 0) throw new EOFException("EOF in body"); r += n; }
+        while (r < len) { int n = in.read(buf, r, len-r); if (n<0) throw new EOFException(); r+=n; }
         return buf;
     }
 
-    // ── Protobuf helpers ──────────────────────────────────────────────────────
-    private static byte[] msg(byte[]... fields) {
-        int t = 0; for (byte[] f : fields) t += f.length;
-        byte[] o = new byte[t]; int p = 0;
-        for (byte[] f : fields) { System.arraycopy(f, 0, o, p, f.length); p += f.length; }
-        return o;
+    private static byte[] protoBytes(int fn, byte[] val) throws IOException {
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        writeVarint(o, (fn << 3) | 2); writeVarint(o, val.length); o.write(val);
+        return o.toByteArray();
     }
-    private static byte[] varintField(int field, long val) {
-        return concat(encodeVarint((long) field << 3), encodeVarint(val));
+    private static byte[] protoStr(int fn, String s) throws IOException { return protoBytes(fn, s.getBytes("UTF-8")); }
+    private static byte[] protoVarint(int fn, long val) throws IOException {
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        writeVarint(o, (fn << 3) | 0); writeVarint(o, val);
+        return o.toByteArray();
     }
-    private static byte[] lenField(int field, byte[] payload) {
-        byte[] tag = encodeVarint(((long) field << 3) | 2L);
-        byte[] len = encodeVarint(payload.length);
-        byte[] o   = new byte[tag.length + len.length + payload.length]; int p = 0;
-        System.arraycopy(tag,     0, o, p, tag.length);     p += tag.length;
-        System.arraycopy(len,     0, o, p, len.length);     p += len.length;
-        System.arraycopy(payload, 0, o, p, payload.length);
-        return o;
+    private static void writeVarint(OutputStream o, long v) throws IOException {
+        while ((v & ~0x7FL) != 0) { o.write((int)((v & 0x7F) | 0x80)); v >>>= 7; }
+        o.write((int)(v & 0x7F));
     }
-    private static byte[] strField(int field, String s) {
-        try { return lenField(field, s.getBytes("UTF-8")); } catch (Exception e) { return new byte[0]; }
+    private static byte[] concat(byte[]... arrays) throws IOException {
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        for (byte[] a : arrays) o.write(a);
+        return o.toByteArray();
     }
-    private static byte[] encodeVarint(long v) {
-        byte[] buf = new byte[10]; int i = 0;
-        while ((v & 0xFFFFFFFFFFFFFF80L) != 0L) { buf[i++] = (byte)((v & 0x7F) | 0x80); v >>>= 7; }
-        buf[i++] = (byte)(v & 0x7F);
-        byte[] o = new byte[i]; System.arraycopy(buf, 0, o, 0, i); return o;
+    private static byte[] unsigned(BigInteger n) {
+        byte[] b = n.abs().toByteArray();
+        if (b[0] == 0) { byte[] t = new byte[b.length-1]; System.arraycopy(b,1,t,0,t.length); return t; }
+        return b;
     }
-    private static byte[] concat(byte[] a, byte[] b) {
-        byte[] c = new byte[a.length + b.length];
-        System.arraycopy(a, 0, c, 0, a.length);
-        System.arraycopy(b, 0, c, a.length, b.length);
-        return c;
-    }
-    private static long parseVarintField(byte[] data, int tf) {
-        int pos = 0;
-        while (pos < data.length) {
-            long tag = 0; int sh = 0;
-            while (pos < data.length) { byte b = data[pos++]; tag |= ((long)(b & 0x7F)) << sh; sh += 7; if ((b & 0x80) == 0) break; }
-            int fn = (int)(tag >> 3), wt = (int)(tag & 7);
-            if (wt == 0) {
-                long v = 0; sh = 0;
-                while (pos < data.length) { byte b = data[pos++]; v |= ((long)(b & 0x7F)) << sh; sh += 7; if ((b & 0x80) == 0) break; }
-                if (fn == tf) return v;
-            } else if (wt == 2) {
-                long len = 0; sh = 0;
-                while (pos < data.length) { byte b = data[pos++]; len |= ((long)(b & 0x7F)) << sh; sh += 7; if ((b & 0x80) == 0) break; }
-                pos += (int) len;
-            } else break;
-        }
-        return -1;
-    }
-    private static byte[] parseEmbedded(byte[] data, int tf) {
-        int pos = 0;
-        while (pos < data.length) {
-            long tag = 0; int sh = 0;
-            while (pos < data.length) { byte b = data[pos++]; tag |= ((long)(b & 0x7F)) << sh; sh += 7; if ((b & 0x80) == 0) break; }
-            int fn = (int)(tag >> 3), wt = (int)(tag & 7);
-            if (wt == 0) { while (pos < data.length) { byte b = data[pos++]; if ((b & 0x80) == 0) break; } }
-            else if (wt == 2) {
-                long len = 0; sh = 0;
-                while (pos < data.length) { byte b = data[pos++]; len |= ((long)(b & 0x7F)) << sh; sh += 7; if ((b & 0x80) == 0) break; }
-                if (fn == tf) { byte[] r = new byte[(int)len]; System.arraycopy(data, pos, r, 0, (int)len); return r; }
-                pos += (int) len;
-            } else break;
-        }
-        return null;
-    }
-    public boolean isConnected() { return socket != null && !socket.isClosed() && socket.isConnected(); }
-    @Override public void close() { try { if (socket != null) socket.close(); } catch (IOException ignored) {} }
+    public boolean isConnected() { return sock != null && !sock.isClosed() && sock.isConnected(); }
+    @Override public void close() { try { if (sock != null) sock.close(); } catch (IOException ignored) {} }
 }
