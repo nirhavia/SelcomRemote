@@ -89,16 +89,19 @@ public class RemoteService extends Service {
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
                     protocol.sendRemoteStart();
+                    // Read (and discard) optional ACK from TV after RemoteStart
+                    try { protocol.readAndDiscard(); } catch (Exception ignored) {}
                     updateNotif("מחובר " + currentHost);
                     long lastKa = System.currentTimeMillis();
                     while (running && !Thread.currentThread().isInterrupted()) {
-                        byte[] m = protocol.readRemoteMessage();
-                        int fn = protocol.parseOuterFieldNumber(m);
-                        if (fn == 9) protocol.sendPingResponse(protocol.parsePingValue(m));
+                        // Keepalive BEFORE blocking read
                         if (System.currentTimeMillis() - lastKa > 5000) {
                             protocol.sendKeepalive();
                             lastKa = System.currentTimeMillis();
                         }
+                        byte[] m = protocol.readRemoteMessage();
+                        int fn = protocol.parseOuterFieldNumber(m);
+                        if (fn == 9) protocol.sendPingResponse(protocol.parsePingValue(m));
                     }
                 } catch (Exception e) {
                     if (!running || intentionalStop) break;
@@ -115,12 +118,13 @@ public class RemoteService extends Service {
         connThread.setDaemon(true); connThread.start();
     }
 
+    // sendKey on caller thread — no thread-per-key
     public void sendKey(int kc) {
         RemoteProtocol p = protocol;
-        if (p != null && p.isConnected()) new Thread(() -> {
-            try { p.sendKeyCode(kc); p.sendKeepalive(); }
+        if (p != null && p.isConnected()) {
+            try { p.sendKeyCode(kc); }
             catch (Exception e) { Log.e(TAG, "sendKey: " + e.getMessage()); }
-        }).start();
+        }
     }
 
     public boolean isConnected() { return protocol != null && protocol.isConnected(); }
