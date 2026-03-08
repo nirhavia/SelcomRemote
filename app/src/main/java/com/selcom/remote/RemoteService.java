@@ -88,8 +88,7 @@ public class RemoteService extends Service {
                     updateNotif("connecting...");
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
-                    protocol.sendRemoteStart();
-                    // NO readAndDiscard here - TV may not send ACK after RemoteStart
+                    protocol.sendSetActive();  // field3=SetActive, required before keys
                     updateNotif("connected " + currentHost);
                     long lastKa = System.currentTimeMillis();
                     while (running && !Thread.currentThread().isInterrupted()) {
