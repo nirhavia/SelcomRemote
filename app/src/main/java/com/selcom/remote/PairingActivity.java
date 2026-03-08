@@ -1,5 +1,6 @@
 package com.selcom.remote;
 import android.content.*;
+import androidx.core.content.ContextCompat;
 import android.os.*;
 import android.view.*;
 import android.widget.*;
@@ -69,6 +70,7 @@ public class PairingActivity extends AppCompatActivity {
         ex.submit(() -> {
             try {
                 boolean ok = rp.sendPairingSecret(pc);
+                rp.readAndDiscard(); // read pairing_result
                 mh.post(() -> {
                     progress.setVisibility(View.GONE);
                     if (ok) {
@@ -76,9 +78,10 @@ public class PairingActivity extends AppCompatActivity {
                             .putBoolean(RemoteService.PREF_PAIRED, true)
                             .putString(RemoteService.PREF_HOST, host).apply();
                         Toast.makeText(this, "הצימוד הצליח!", Toast.LENGTH_SHORT).show();
-                        startService(new Intent(this, RemoteService.class)
-                            .setAction(RemoteService.ACTION_CONNECT)
-                            .putExtra(RemoteService.EXTRA_HOST, host));
+                        ContextCompat.startForegroundService(this,
+                            new Intent(this, RemoteService.class)
+                                .setAction(RemoteService.ACTION_CONNECT)
+                                .putExtra(RemoteService.EXTRA_HOST, host));
                         startActivity(new Intent(this, MainActivity.class)
                             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));
                         finish();
@@ -138,6 +141,9 @@ public class PairingActivity extends AppCompatActivity {
         final RemoteProtocol toClose = rp;
         rp = null;
         ex.submit(() -> { if (toClose != null) toClose.close(); });
-        ex.shutdown();
+        ex.shutdownNow();
     }
 }
+')
+print('Done!')
+print(f'https://github.com/{REPO_OWNER}/{REPO_NAME}/actions
