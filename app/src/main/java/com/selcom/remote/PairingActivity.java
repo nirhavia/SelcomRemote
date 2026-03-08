@@ -108,7 +108,7 @@ public class PairingActivity extends AppCompatActivity {
         ex.submit(() -> {
             try {
                 boolean ok = rp.sendPairingSecret(pc);
-                try { rp.readAndDiscard(); } catch (Exception ignored) {} // read pairing_result
+                // sendPairingSecret already reads the ACK internally - no extra read needed
                 mh.post(() -> {
                     progress.setVisibility(View.GONE);
                     if (ok) {
