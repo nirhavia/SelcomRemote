@@ -13,7 +13,6 @@ import javax.net.ssl.*;
 public class RemoteProtocol implements Closeable {
 
     private static final String TAG = "RemoteProtocol";
-
     public static final int PORT_PAIRING = 6467;
     public static final int PORT_REMOTE  = 6466;
 
@@ -67,8 +66,6 @@ public class RemoteProtocol implements Closeable {
         return ssl;
     }
 
-    // ── Pairing ──────────────────────────────────────────────────────
-
     public void connectForPairing(String host) throws Exception {
         SSLContext ssl = buildSSLContext();
         sock = (SSLSocket) ssl.getSocketFactory().createSocket();
@@ -99,9 +96,7 @@ public class RemoteProtocol implements Closeable {
         sendMsg(new byte[]{8,2,16,(byte)200,1,(byte)242,1,8,10,4,8,3,16,6,16,1});
     }
 
-    public void readAndDiscard() throws Exception {
-        readMsg();
-    }
+    public void readAndDiscard() throws Exception { readMsg(); }
 
     public boolean sendPairingSecret(String pin) throws Exception {
         X509Certificate srv = (X509Certificate) sock.getSession().getPeerCertificates()[0];
@@ -123,8 +118,6 @@ public class RemoteProtocol implements Closeable {
         Log.d(TAG, "SecretAck ok=" + ok);
         return ok;
     }
-
-    // ── Remote control ───────────────────────────────────────────────
 
     public void connectForRemote(String host) throws Exception {
         SSLContext ssl = buildSSLContext();
@@ -153,15 +146,12 @@ public class RemoteProtocol implements Closeable {
     public void sendPingResponse(int v) throws Exception {
         out.write(new byte[]{74, 2, 8, (byte) v});
         out.flush();
-        Log.d(TAG, "-> pong");
     }
 
     public byte[] readRemoteMessage() throws Exception { return readMsg(); }
     public int parseOuterFieldNumber(byte[] d) { return d.length == 0 ? -1 : (d[0] & 0xFF) >> 3; }
     public int parsePingValue(byte[] d) { return d.length >= 4 ? d[3] & 0xFF : 0; }
     public boolean isConnected() { return sock != null && sock.isConnected() && !sock.isClosed(); }
-
-    // ── Framing ──────────────────────────────────────────────────────
 
     private void sendMsg(byte[] msg) throws Exception {
         out.write(msg.length & 0xFF);
@@ -179,8 +169,6 @@ public class RemoteProtocol implements Closeable {
         }
         return buf;
     }
-
-    // ── Utils ────────────────────────────────────────────────────────
 
     private static byte[] unsigned(java.math.BigInteger n) {
         byte[] b = n.abs().toByteArray();
