@@ -170,9 +170,10 @@ public class RemoteProtocol implements Closeable {
         Log.d(TAG, "Remote TLS OK");
     }
 
-    public void sendRemoteStart() throws Exception {
-        sendMsg(new byte[]{34, 2, 8, 1});
-        Log.d(TAG, "-> RemoteStart");
+    // SetActive (field3=0x1A): must send after connect, and every ~20s as keepalive
+    public void sendSetActive() throws Exception {
+        sendMsg(new byte[]{0x1A, 0x02, 0x08, 0x01});
+        Log.d(TAG, "-> SetActive");
     }
 
     public synchronized void sendKeyCode(int kc) throws Exception {
@@ -180,8 +181,7 @@ public class RemoteProtocol implements Closeable {
     }
 
     public void sendKeepalive() throws Exception {
-        out.write(new byte[]{48, 1});
-        out.flush();
+        sendMsg(new byte[]{0x1A, 0x02, 0x08, 0x01});  // SetActive as keepalive
     }
 
     public void sendPingResponse(int v) throws Exception {
