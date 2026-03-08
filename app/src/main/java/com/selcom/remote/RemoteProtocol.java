@@ -69,6 +69,8 @@ public class RemoteProtocol implements Closeable {
     public void connectForPairing(String host) throws Exception {
         SSLContext ssl = buildSSLContext();
         sock = (SSLSocket) ssl.getSocketFactory().createSocket();
+        sock.setEnabledProtocols(sock.getSupportedProtocols());
+        sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
         sock.connect(new InetSocketAddress(host, PORT_PAIRING), 5000);
         sock.startHandshake();
         in  = sock.getInputStream();
@@ -122,6 +124,8 @@ public class RemoteProtocol implements Closeable {
     public void connectForRemote(String host) throws Exception {
         SSLContext ssl = buildSSLContext();
         sock = (SSLSocket) ssl.getSocketFactory().createSocket();
+        sock.setEnabledProtocols(sock.getSupportedProtocols());
+        sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
         sock.connect(new InetSocketAddress(host, PORT_REMOTE), 5000);
         sock.startHandshake();
         in  = sock.getInputStream();
