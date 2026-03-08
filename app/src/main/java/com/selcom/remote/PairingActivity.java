@@ -1,43 +1,41 @@
 package com.selcom.remote;
 import android.content.*;
-import androidx.core.content.ContextCompat;
 import android.os.*;
 import android.view.*;
 import android.widget.*;
 import androidx.appcompat.app.AppCompatActivity;
-import java.util.concurrent.*;
+import androidx.core.content.ContextCompat;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class PairingActivity extends AppCompatActivity {
-    public static final String EXTRA_HOST = "host";
-    private String host;
-    private final StringBuilder code = new StringBuilder();
-    private TextView tvCode;
-    private Button btnPair;
-    private ProgressBar progress;
-    private View keyboardArea;
-    private volatile RemoteProtocol rp;
-    private final ExecutorService ex = Executors.newSingleThreadExecutor();
-    private final Handler mh = new Handler(Looper.getMainLooper());
 
-    @Override protected void onCreate(Bundle b) {
+    private String host;
+    private RemoteProtocol rp;
+    private StringBuilder code = new StringBuilder();
+    private ExecutorService ex = Executors.newSingleThreadExecutor();
+    private Handler mh = new Handler(Looper.getMainLooper());
+
+    private TextView tvCode;
+    private View progress;
+    private View keyboardArea;
+    private Button btnPair;
+
+    @Override
+    protected void onCreate(Bundle b) {
         super.onCreate(b);
-        setContentView(R.layout.activity_pairing);
-        host = getIntent().getStringExtra(EXTRA_HOST);
+        host = getIntent().getStringExtra("host");
         if (host == null) { finish(); return; }
-        tvCode       = findViewById(R.id.tv_pairing_code);
-        btnPair      = findViewById(R.id.btn_submit_pair);
-        progress     = findViewById(R.id.pairing_progress);
-        keyboardArea = findViewById(R.id.keyboard_scroll);
-        buildKeyboard();
-        updateDisplay();
-        btnPair.setOnClickListener(v -> { if (code.length() == 6) doSendSecret(); });
-        findViewById(R.id.btn_delete).setOnClickListener(v -> {
-            if (code.length() > 0) { code.deleteCharAt(code.length()-1); updateDisplay(); }
-        });
-        startHandshake();
+        setContentView(R.layout.activity_pairing);
+        tvCode      = findViewById(R.id.tv_code);
+        progress    = findViewById(R.id.progress);
+        keyboardArea= findViewById(R.id.keyboard_area);
+        btnPair     = findViewById(R.id.btn_pair);
+        progress.setVisibility(View.GONE);
+        startPairingHandshake();
     }
 
-    private void startHandshake() {
+    private void startPairingHandshake() {
         progress.setVisibility(View.VISIBLE);
         keyboardArea.setVisibility(View.GONE);
         ex.submit(() -> {
@@ -50,16 +48,32 @@ public class PairingActivity extends AppCompatActivity {
                 mh.post(() -> {
                     progress.setVisibility(View.GONE);
                     keyboardArea.setVisibility(View.VISIBLE);
-                    Toast.makeText(this, "הטלוויזיה מציגה קוד - הזן אותו", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Enter PIN shown on TV", Toast.LENGTH_SHORT).show();
                 });
             } catch (Exception e) {
                 mh.post(() -> {
-                    progress.setVisibility(View.GONE);
-                    Toast.makeText(this, "שגיאת חיבור: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Connection failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
                     finish();
                 });
             }
         });
+    }
+
+    public void onKey(View v) {
+        if (code.length() >= 6) return;
+        String t = ((Button) v).getText().toString();
+        code.append(t);
+        updateDisplay();
+        if (code.length() == 6) btnPair.setEnabled(true);
+    }
+
+    public void onBackspace(View v) {
+        if (code.length() > 0) { code.deleteCharAt(code.length() - 1); updateDisplay(); }
+        btnPair.setEnabled(false);
+    }
+
+    public void onPair(View v) {
+        doSendSecret();
     }
 
     private void doSendSecret() {
@@ -70,14 +84,14 @@ public class PairingActivity extends AppCompatActivity {
         ex.submit(() -> {
             try {
                 boolean ok = rp.sendPairingSecret(pc);
-                rp.readAndDiscard(); // read pairing_result
+                rp.readAndDiscard(); // read pairing_result from TV
                 mh.post(() -> {
                     progress.setVisibility(View.GONE);
                     if (ok) {
                         getSharedPreferences(RemoteService.PREF_FILE, MODE_PRIVATE).edit()
                             .putBoolean(RemoteService.PREF_PAIRED, true)
                             .putString(RemoteService.PREF_HOST, host).apply();
-                        Toast.makeText(this, "הצימוד הצליח!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Pairing OK!", Toast.LENGTH_SHORT).show();
                         ContextCompat.startForegroundService(this,
                             new Intent(this, RemoteService.class)
                                 .setAction(RemoteService.ACTION_CONNECT)
@@ -88,62 +102,33 @@ public class PairingActivity extends AppCompatActivity {
                     } else {
                         code.setLength(0); updateDisplay();
                         keyboardArea.setVisibility(View.VISIBLE);
-                        Toast.makeText(this, "קוד שגוי - נסה שוב", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Wrong code - try again", Toast.LENGTH_SHORT).show();
                     }
                 });
             } catch (Exception e) {
                 mh.post(() -> {
                     progress.setVisibility(View.GONE);
+                    code.setLength(0); updateDisplay();
                     keyboardArea.setVisibility(View.VISIBLE);
-                    Toast.makeText(this, "שגיאה: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 });
             }
         });
     }
 
-    private void buildKeyboard() {
-        LinearLayout container = findViewById(R.id.keyboard_container);
-        float dp = getResources().getDisplayMetrics().density;
-        int h = (int)(58 * dp);
-        String[] rows = { "1234567890", "ABCDEF" };
-        for (String row : rows) {
-            LinearLayout rl = new LinearLayout(this);
-            rl.setOrientation(LinearLayout.HORIZONTAL);
-            rl.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-            rl.setGravity(Gravity.CENTER);
-            for (char c : row.toCharArray()) {
-                Button btn = new Button(this);
-                btn.setText(String.valueOf(c));
-                btn.setTextSize(20f);
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, h);
-                lp.weight = 1; lp.setMargins(3, 3, 3, 3);
-                btn.setLayoutParams(lp);
-                btn.setOnClickListener(v -> {
-                    if (code.length() < 6) { code.append(c); updateDisplay(); }
-                });
-                rl.addView(btn);
-            }
-            container.addView(rl);
-        }
-    }
-
     private void updateDisplay() {
-        StringBuilder d = new StringBuilder(code);
-        for (int i = code.length(); i < 6; i++) d.append('_');
+        StringBuilder d = new StringBuilder();
+        for (int i = 0; i < 6; i++) d.append(i < code.length() ? code.charAt(i) : '-');
         tvCode.setText(d.toString());
         btnPair.setEnabled(code.length() == 6);
     }
 
-    @Override protected void onDestroy() {
+    @Override
+    protected void onDestroy() {
         super.onDestroy();
-        // MUST close socket on background thread - SSL close does network I/O
         final RemoteProtocol toClose = rp;
         rp = null;
         ex.submit(() -> { if (toClose != null) toClose.close(); });
         ex.shutdownNow();
     }
 }
-')
-print('Done!')
-print(f'https://github.com/{REPO_OWNER}/{REPO_NAME}/actions
