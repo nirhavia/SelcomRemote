@@ -89,7 +89,7 @@ public class RemoteService extends Service {
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
                     protocol.sendRemoteStart();
-                    try { protocol.readAndDiscard(); } catch (Exception ignored) {}
+                    // NO readAndDiscard here - TV may not send ACK after RemoteStart
                     updateNotif("connected " + currentHost);
                     long lastKa = System.currentTimeMillis();
                     while (running && !Thread.currentThread().isInterrupted()) {
