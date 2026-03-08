@@ -195,21 +195,13 @@ public class RemoteProtocol implements Closeable {
     public boolean isConnected() { return sock != null && sock.isConnected() && !sock.isClosed(); }
 
     private void sendMsg(byte[] msg) throws Exception {
-        writeVarint(msg.length);
+        out.write(msg.length & 0xFF);  // 1-byte length prefix (confirmed working)
         out.write(msg);
         out.flush();
     }
 
-    private void writeVarint(int v) throws IOException {
-        while ((v & ~0x7F) != 0) {
-            out.write((v & 0x7F) | 0x80);
-            v >>>= 7;
-        }
-        out.write(v);
-    }
-
     private byte[] readMsg() throws Exception {
-        int len = readVarint();
+        int len = in.read() & 0xFF;  // 1-byte length prefix (confirmed working)
         byte[] buf = new byte[len]; int r = 0;
         while (r < len) {
             int n = in.read(buf, r, len - r);
@@ -217,18 +209,6 @@ public class RemoteProtocol implements Closeable {
             r += n;
         }
         return buf;
-    }
-
-    private int readVarint() throws IOException {
-        int value = 0, shift = 0;
-        while (true) {
-            int b = in.read();
-            if (b == -1) throw new EOFException();
-            value |= (b & 0x7F) << shift;
-            if ((b & 0x80) == 0) break;
-            shift += 7;
-        }
-        return value;
     }
 
     private static byte[] unsigned(java.math.BigInteger n) {
