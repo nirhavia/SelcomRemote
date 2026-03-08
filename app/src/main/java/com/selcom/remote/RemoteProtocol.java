@@ -106,7 +106,7 @@ public class RemoteProtocol implements Closeable {
         SSLContext ssl = buildSSLContext();
         sock = (SSLSocket) ssl.getSocketFactory().createSocket();
         sock.setEnabledProtocols(sock.getSupportedProtocols());
-        sock.setEnabledCipherSuites(new String[]{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_RSA_WITH_AES_128_CBC_SHA"});
+        sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
         sock.connect(new InetSocketAddress(host, PORT_PAIRING), 5000);
         sock.startHandshake();
         in  = sock.getInputStream();
@@ -161,7 +161,7 @@ public class RemoteProtocol implements Closeable {
         SSLContext ssl = buildSSLContext();
         sock = (SSLSocket) ssl.getSocketFactory().createSocket();
         sock.setEnabledProtocols(sock.getSupportedProtocols());
-        sock.setEnabledCipherSuites(new String[]{"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_RSA_WITH_AES_128_CBC_SHA"});
+        sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
         sock.connect(new InetSocketAddress(host, PORT_REMOTE), 5000);
         sock.setSoTimeout(60000);
         sock.startHandshake();
