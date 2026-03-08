@@ -42,7 +42,7 @@ public class RemoteService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        postForeground("לא מחובר");
+        postForeground("not connected");
         if (intent != null) {
             String action = intent.getAction();
             if (ACTION_CONNECT.equals(action)) {
@@ -85,16 +85,14 @@ public class RemoteService extends Service {
         connThread = new Thread(() -> {
             while (running && !Thread.currentThread().isInterrupted()) {
                 try {
-                    updateNotif("מתחבר...");
+                    updateNotif("connecting...");
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
                     protocol.sendRemoteStart();
-                    // Read (and discard) optional ACK from TV after RemoteStart
                     try { protocol.readAndDiscard(); } catch (Exception ignored) {}
-                    updateNotif("מחובר " + currentHost);
+                    updateNotif("connected " + currentHost);
                     long lastKa = System.currentTimeMillis();
                     while (running && !Thread.currentThread().isInterrupted()) {
-                        // Keepalive BEFORE blocking read
                         if (System.currentTimeMillis() - lastKa > 5000) {
                             protocol.sendKeepalive();
                             lastKa = System.currentTimeMillis();
@@ -107,18 +105,17 @@ public class RemoteService extends Service {
                     if (!running || intentionalStop) break;
                     Log.w(TAG, "conn: " + e.getMessage());
                     closeProtocol();
-                    updateNotif("מנסה שוב...");
+                    updateNotif("reconnecting...");
                     try { Thread.sleep(RECONNECT_MS); } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt(); break;
                     }
                 }
             }
-            closeProtocol(); updateNotif("לא מחובר");
+            closeProtocol(); updateNotif("not connected");
         }, "ConnThread");
         connThread.setDaemon(true); connThread.start();
     }
 
-    // sendKey on caller thread — no thread-per-key
     public void sendKey(int kc) {
         RemoteProtocol p = protocol;
         if (p != null && p.isConnected()) {
