@@ -163,8 +163,8 @@ public class RemoteProtocol implements Closeable {
         sock.setEnabledProtocols(sock.getSupportedProtocols());
         sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
         sock.connect(new InetSocketAddress(host, PORT_REMOTE), 5000);
-        sock.setSoTimeout(2000);
-        sock.startHandshake();
+        sock.startHandshake();          // ← handshake first, no timeout yet
+        sock.setSoTimeout(2000);        // ← ONLY after handshake: allows keepalive loop to tick
         in  = sock.getInputStream();
         out = sock.getOutputStream();
         Log.d(TAG, "Remote TLS OK");
@@ -180,7 +180,7 @@ public class RemoteProtocol implements Closeable {
     }
 
     public void sendKeepalive() throws Exception {
-        out.write(new byte[]{48, 1});
+        out.write(new byte[]{48, 1});  // field6 varint, raw NO length prefix
         out.flush();
     }
 
