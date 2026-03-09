@@ -88,7 +88,7 @@ public class RemoteService extends Service {
                     updateNotif("connecting...");
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
-                    protocol.sendRemoteStart();  // field4 wire2, required before key events
+                    protocol.sendRemoteStart();
                     updateNotif("connected " + currentHost);
                     long lastKa = System.currentTimeMillis();
                     while (running && !Thread.currentThread().isInterrupted()) {
@@ -96,9 +96,14 @@ public class RemoteService extends Service {
                             protocol.sendKeepalive();
                             lastKa = System.currentTimeMillis();
                         }
-                        byte[] m = protocol.readRemoteMessage();
+                        byte[] m;
+                        try {
+                            m = protocol.readRemoteMessage();
+                        } catch (java.net.SocketTimeoutException e) {
+                            continue;
+                        }
                         int fn = protocol.parseOuterFieldNumber(m);
-                        if (fn == 9) protocol.sendPingResponse(protocol.parsePingValue(m));  // ping byte 74=0x4A=field9
+                        if (fn == 9) protocol.sendPingResponse(protocol.parsePingValue(m));
                     }
                 } catch (Exception e) {
                     if (!running || intentionalStop) break;
