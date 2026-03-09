@@ -89,7 +89,7 @@ public class RemoteService extends Service {
                     updateNotif("connecting...");
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
-                    protocol.sendRemoteStart();
+                    protocol.sendRemoteStart(); // field4 wire2, required by this device
                     updateNotif("connected " + currentHost);
 
                     // Keepalive on a dedicated thread — never blocks the read loop
@@ -102,18 +102,28 @@ public class RemoteService extends Service {
                             } catch (InterruptedException ie) {
                                 break;
                             } catch (Exception e) {
-                                break;  // socket died, main thread will detect via readMsg
+                                break;
                             }
                         }
                     }, "KeepaliveThread");
                     kaThread.setDaemon(true);
                     kaThread.start();
 
-                    // Read loop — pure blocking, no timeout tricks
+                    // Read loop — pure blocking
                     while (running && !Thread.currentThread().isInterrupted()) {
                         byte[] m = protocol.readRemoteMessage();
                         int fn = protocol.parseOuterFieldNumber(m);
-                        if (fn == 9) protocol.sendPingResponse(protocol.parsePingValue(m));
+                        if (fn == 1) {
+                            // remote_configure: TV requests handshake, respond with our config
+                            protocol.sendConfigureResponse();
+                        } else if (fn == 2) {
+                            // remote_set_active: TV activates session
+                            protocol.sendSetActiveResponse();
+                        } else if (fn == 8) {
+                            // remote_ping_request (field 8, tag=0x42)
+                            // respond with remote_ping_response (field 9)
+                            protocol.sendPingResponse(protocol.parsePingValue(m));
+                        }
                     }
                 } catch (Exception e) {
                     if (!running || intentionalStop) break;
