@@ -163,8 +163,8 @@ public class RemoteProtocol implements Closeable {
         sock.setEnabledProtocols(sock.getSupportedProtocols());
         sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
         sock.connect(new InetSocketAddress(host, PORT_REMOTE), 5000);
-        sock.startHandshake();          // ← handshake first, no timeout yet
-        sock.setSoTimeout(2000);        // ← ONLY after handshake: allows keepalive loop to tick
+        sock.startHandshake();
+        // No setSoTimeout — keepalive runs on its own thread in RemoteService
         in  = sock.getInputStream();
         out = sock.getOutputStream();
         Log.d(TAG, "Remote TLS OK");
