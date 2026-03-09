@@ -69,6 +69,26 @@ public class RemoteProtocol implements Closeable {
             + "058e8cab69b6042c3c71f73909d504d615d3786bd07f93b33e3d7333ce5f7d5b80f7610be1e9fe0b"
             + "69963ba758157b8088098f667ce1f8";
 
+    // RemoteConfigure response bytes (precomputed protobuf):
+    // RemoteMessage { remote_configure { code1=3, device_info { unknown1=1, unknown2="1",
+    //   package_name="atvremote", app_version="1.0.0" } } }
+    // features=3 = PING(1)|KEY(2)
+    private static final byte[] CONFIGURE_RESPONSE = {
+        0x0A, 0x1B,             // field1 (remote_configure) wire2, len=27
+        0x08, 0x03,             // code1 = 3
+        0x12, 0x17,             // field2 (device_info) wire2, len=23
+        0x18, 0x01,             // unknown1 = 1
+        0x22, 0x01, 0x31,       // unknown2 = "1"
+        0x2A, 0x09, 0x61,0x74,0x76,0x72,0x65,0x6D,0x6F,0x74,0x65, // package_name="atvremote"
+        0x32, 0x05, 0x31,0x2E,0x30,0x2E,0x30  // app_version="1.0.0"
+    };
+
+    // RemoteSetActive response bytes:
+    // RemoteMessage { remote_set_active { active=3 } }
+    private static final byte[] SET_ACTIVE_RESPONSE = {
+        0x12, 0x02, 0x08, 0x03  // field2 wire2, len=2, active=3
+    };
+
     private SSLSocket sock;
     private InputStream in;
     private OutputStream out;
@@ -164,15 +184,28 @@ public class RemoteProtocol implements Closeable {
         sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
         sock.connect(new InetSocketAddress(host, PORT_REMOTE), 5000);
         sock.startHandshake();
-        // No setSoTimeout — keepalive runs on its own thread in RemoteService
+        // No setSoTimeout — keepalive runs on its own thread
         in  = sock.getInputStream();
         out = sock.getOutputStream();
         Log.d(TAG, "Remote TLS OK");
     }
 
+    // RemoteStart: field4 wire2, must send once after connect
     public void sendRemoteStart() throws Exception {
         sendMsg(new byte[]{34, 2, 8, 1});
         Log.d(TAG, "-> RemoteStart");
+    }
+
+    // Respond to remote_configure (field 1) from TV
+    public void sendConfigureResponse() throws Exception {
+        sendMsg(CONFIGURE_RESPONSE);
+        Log.d(TAG, "-> ConfigureResponse");
+    }
+
+    // Respond to remote_set_active (field 2) from TV
+    public void sendSetActiveResponse() throws Exception {
+        sendMsg(SET_ACTIVE_RESPONSE);
+        Log.d(TAG, "-> SetActiveResponse");
     }
 
     public synchronized void sendKeyCode(int kc) throws Exception {
@@ -184,18 +217,24 @@ public class RemoteProtocol implements Closeable {
         out.flush();
     }
 
+    // Ping REQUEST from TV is field 8 (0x42). Response is field 9 (0x4A).
+    // Sent WITH length prefix via sendMsg.
     public void sendPingResponse(int v) throws Exception {
-        out.write(new byte[]{74, 2, 8, (byte) v});
-        out.flush();
+        sendMsg(new byte[]{(byte)0x4A, 0x02, 0x08, (byte) v});
     }
 
     public byte[] readRemoteMessage() throws Exception { return readMsg(); }
+
+    // Returns outer field number from first byte (works for fields 1-15)
     public int parseOuterFieldNumber(byte[] d) { return d.length == 0 ? -1 : (d[0] & 0xFF) >> 3; }
+
+    // Parse val1 from ping request: [0x42, len, 0x08, val]
     public int parsePingValue(byte[] d) { return d.length >= 4 ? d[3] & 0xFF : 0; }
+
     public boolean isConnected() { return sock != null && sock.isConnected() && !sock.isClosed(); }
 
     private void sendMsg(byte[] msg) throws Exception {
-        out.write(msg.length & 0xFF);
+        out.write(msg.length & 0xFF);  // 1-byte length prefix
         out.write(msg);
         out.flush();
     }
