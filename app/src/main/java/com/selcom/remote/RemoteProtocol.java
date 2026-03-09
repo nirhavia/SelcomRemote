@@ -163,14 +163,13 @@ public class RemoteProtocol implements Closeable {
         sock.setEnabledProtocols(sock.getSupportedProtocols());
         sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
         sock.connect(new InetSocketAddress(host, PORT_REMOTE), 5000);
-        sock.setSoTimeout(60000);
+        sock.setSoTimeout(2000);
         sock.startHandshake();
         in  = sock.getInputStream();
         out = sock.getOutputStream();
         Log.d(TAG, "Remote TLS OK");
     }
 
-    // RemoteStart: field4 wire2, must send once after connect
     public void sendRemoteStart() throws Exception {
         sendMsg(new byte[]{34, 2, 8, 1});
         Log.d(TAG, "-> RemoteStart");
@@ -181,7 +180,7 @@ public class RemoteProtocol implements Closeable {
     }
 
     public void sendKeepalive() throws Exception {
-        out.write(new byte[]{48, 1});  // field6 varint, raw NO length prefix
+        out.write(new byte[]{48, 1});
         out.flush();
     }
 
@@ -196,13 +195,13 @@ public class RemoteProtocol implements Closeable {
     public boolean isConnected() { return sock != null && sock.isConnected() && !sock.isClosed(); }
 
     private void sendMsg(byte[] msg) throws Exception {
-        out.write(msg.length & 0xFF);  // 1-byte length prefix (confirmed working)
+        out.write(msg.length & 0xFF);
         out.write(msg);
         out.flush();
     }
 
     private byte[] readMsg() throws Exception {
-        int len = in.read() & 0xFF;  // 1-byte length prefix (confirmed working)
+        int len = in.read() & 0xFF;
         byte[] buf = new byte[len]; int r = 0;
         while (r < len) {
             int n = in.read(buf, r, len - r);
