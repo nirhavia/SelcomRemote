@@ -84,24 +84,34 @@ public class RemoteService extends Service {
         running = true; intentionalStop = false;
         connThread = new Thread(() -> {
             while (running && !Thread.currentThread().isInterrupted()) {
+                Thread kaThread = null;
                 try {
                     updateNotif("connecting...");
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
                     protocol.sendRemoteStart();
                     updateNotif("connected " + currentHost);
-                    long lastKa = System.currentTimeMillis();
+
+                    // Keepalive on a dedicated thread — never blocks the read loop
+                    final RemoteProtocol kaProto = protocol;
+                    kaThread = new Thread(() -> {
+                        while (!Thread.currentThread().isInterrupted()) {
+                            try {
+                                Thread.sleep(5000);
+                                kaProto.sendKeepalive();
+                            } catch (InterruptedException ie) {
+                                break;
+                            } catch (Exception e) {
+                                break;  // socket died, main thread will detect via readMsg
+                            }
+                        }
+                    }, "KeepaliveThread");
+                    kaThread.setDaemon(true);
+                    kaThread.start();
+
+                    // Read loop — pure blocking, no timeout tricks
                     while (running && !Thread.currentThread().isInterrupted()) {
-                        if (System.currentTimeMillis() - lastKa > 5000) {
-                            protocol.sendKeepalive();
-                            lastKa = System.currentTimeMillis();
-                        }
-                        byte[] m;
-                        try {
-                            m = protocol.readRemoteMessage();
-                        } catch (java.net.SocketTimeoutException e) {
-                            continue;
-                        }
+                        byte[] m = protocol.readRemoteMessage();
                         int fn = protocol.parseOuterFieldNumber(m);
                         if (fn == 9) protocol.sendPingResponse(protocol.parsePingValue(m));
                     }
@@ -113,6 +123,8 @@ public class RemoteService extends Service {
                     try { Thread.sleep(RECONNECT_MS); } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt(); break;
                     }
+                } finally {
+                    if (kaThread != null) kaThread.interrupt();
                 }
             }
             closeProtocol(); updateNotif("not connected");
