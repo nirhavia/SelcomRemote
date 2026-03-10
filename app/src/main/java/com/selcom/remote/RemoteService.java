@@ -132,7 +132,7 @@ public class RemoteService extends Service {
         connThread.start();
     }
 
-public void sendKey(int kc) {
+    public void sendKey(int kc) {
         RemoteProtocol p = protocol;
         if (p == null) {
             updateNotif("DBG: protocol=null kc=" + kc);
@@ -146,10 +146,8 @@ public void sendKey(int kc) {
             p.sendKeyCode(kc);
             updateNotif("DBG: sent kc=" + kc);
         } catch (Exception e) {
-            updateNotif("DBG: ERR " + e.getClass().getSimpleName() + " " + e.getMessage());
-        }
-    }
-            catch (Exception e) { Log.e(TAG, "sendKey: " + e.getMessage()); }
+            updateNotif("DBG: ERR " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            Log.e(TAG, "sendKey", e);
         }
     }
 
