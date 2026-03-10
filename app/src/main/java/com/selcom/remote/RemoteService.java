@@ -98,53 +98,42 @@ public class RemoteService extends Service {
 
         connThread = new Thread(() -> {
             while (running && !Thread.currentThread().isInterrupted()) {
-                Thread kaThread = null;
                 try {
                     updateNotif("connecting...");
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
-                    // NOTE: Do NOT send anything here.
-                    // The TV initiates the handshake: configure -> set_active -> start
                     updateNotif("connected " + currentHost);
 
-                    // Dedicated keepalive thread
-                    final RemoteProtocol kaProto = protocol;
-                    kaThread = new Thread(() -> {
-                        while (!Thread.currentThread().isInterrupted()) {
-                            try {
-                                Thread.sleep(5000);
-                                kaProto.sendKeepalive();
-                            } catch (InterruptedException ie) { break; }
-                            catch (Exception e) { break; }
-                        }
-                    }, "KeepaliveThread");
-                    kaThread.setDaemon(true);
-                    kaThread.start();
-
-                    // Pure blocking read loop — no socket timeout
+                    // Pure blocking read loop.
+                    // Keepalive = responding to TV's ping_request (fn==8) with ping_response (fn==9).
+                    // No separate keepalive thread needed.
                     while (running && !Thread.currentThread().isInterrupted()) {
                         byte[] m = protocol.readRemoteMessage();
                         int fn = protocol.parseOuterFieldNumber(m);
-                        Log.d(TAG, "<- field " + fn + " len=" + m.length);
+                        Log.d(TAG, "<- fn=" + fn + " len=" + m.length);
                         if (fn == 1) {
+                            // remote_configure: TV announces supported features, we reply with ours
                             protocol.sendConfigureResponse();
                         } else if (fn == 2) {
+                            // remote_set_active: echo active features
                             protocol.sendSetActiveResponse();
                         } else if (fn == 8) {
+                            // remote_ping_request: must respond within ~5s or TV disconnects us
                             protocol.sendPingResponse(protocol.parsePingValue(m));
                         } else if (fn == 40) {
-                            Log.d(TAG, "remote_start received — session active");
+                            // remote_start: TV power state notification, no response needed
+                            Log.d(TAG, "remote_start — session established");
                         }
+                        // fn==9 = our ping response echoed back (ignore)
+                        // fn==50/51 = volume info (ignore)
                     }
                 } catch (Exception e) {
                     if (!running || intentionalStop) break;
-                    Log.w(TAG, "conn error: " + e.getMessage());
+                    Log.w(TAG, "conn error: " + e.getClass().getSimpleName() + ": " + e.getMessage());
                     closeProtocol();
                     updateNotif("reconnecting...");
                     try { Thread.sleep(RECONNECT_MS); }
                     catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
-                } finally {
-                    if (kaThread != null) kaThread.interrupt();
                 }
             }
             closeProtocol();
