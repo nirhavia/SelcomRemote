@@ -8,17 +8,24 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
 public class RemoteService extends Service {
-    private static final String TAG="RemoteService", CHANNEL_ID="selcom_ch";
-    private static final int NOTIF_ID=1, RECONNECT_MS=3000;
-    public static final String ACTION_SEND_KEY="com.selcom.remote.SEND_KEY";
-    public static final String ACTION_CONNECT="com.selcom.remote.CONNECT";
-    public static final String ACTION_DISCONNECT="com.selcom.remote.DISCONNECT";
-    public static final String EXTRA_KEY_CODE="key_code", EXTRA_HOST="host";
-    public static final String PREF_FILE="selcom_remote", PREF_HOST="paired_host", PREF_PAIRED="is_paired";
+    private static final String TAG = "RemoteService";
+    private static final String CHANNEL_ID = "selcom_ch";
+    private static final int NOTIF_ID = 1;
+    private static final int RECONNECT_MS = 3000;
+
+    public static final String ACTION_SEND_KEY  = "com.selcom.remote.SEND_KEY";
+    public static final String ACTION_CONNECT   = "com.selcom.remote.CONNECT";
+    public static final String ACTION_DISCONNECT= "com.selcom.remote.DISCONNECT";
+    public static final String EXTRA_KEY_CODE   = "key_code";
+    public static final String EXTRA_HOST       = "host";
+    public static final String PREF_FILE        = "selcom_remote";
+    public static final String PREF_HOST        = "paired_host";
+    public static final String PREF_PAIRED      = "is_paired";
 
     private volatile RemoteProtocol protocol;
     private Thread connThread;
-    private volatile boolean running=false, intentionalStop=false;
+    private volatile boolean running = false;
+    private volatile boolean intentionalStop = false;
     private volatile String currentHost;
 
     private final BroadcastReceiver keyReceiver = new BroadcastReceiver() {
@@ -31,7 +38,9 @@ public class RemoteService extends Service {
     };
 
     private final IBinder binder = new LocalBinder();
-    public class LocalBinder extends Binder { public RemoteService getService() { return RemoteService.this; } }
+    public class LocalBinder extends Binder {
+        public RemoteService getService() { return RemoteService.this; }
+    }
     @Override public IBinder onBind(Intent i) { return binder; }
 
     @Override public void onCreate() {
@@ -49,7 +58,8 @@ public class RemoteService extends Service {
                 String h = intent.getStringExtra(EXTRA_HOST);
                 if (h != null) setHostAndConnect(h);
             } else if (ACTION_DISCONNECT.equals(action)) {
-                intentionalStop = true; disconnect();
+                intentionalStop = true;
+                disconnect();
             } else if (ACTION_SEND_KEY.equals(action)) {
                 int c = intent.getIntExtra(EXTRA_KEY_CODE, -1);
                 if (c != -1) sendKey(c);
@@ -66,14 +76,16 @@ public class RemoteService extends Service {
     }
 
     @Override public void onDestroy() {
-        super.onDestroy(); running = false;
+        super.onDestroy();
+        running = false;
         try { unregisterReceiver(keyReceiver); } catch (Exception ignored) {}
         disconnect();
     }
 
     public void setHostAndConnect(String host) {
         currentHost = host;
-        getSharedPreferences(PREF_FILE, MODE_PRIVATE).edit().putString(PREF_HOST, host).apply();
+        getSharedPreferences(PREF_FILE, MODE_PRIVATE)
+            .edit().putString(PREF_HOST, host).apply();
         startConnectionLoop();
     }
 
@@ -81,7 +93,9 @@ public class RemoteService extends Service {
 
     private void startConnectionLoop() {
         if (connThread != null) connThread.interrupt();
-        running = true; intentionalStop = false;
+        running = true;
+        intentionalStop = false;
+
         connThread = new Thread(() -> {
             while (running && !Thread.currentThread().isInterrupted()) {
                 Thread kaThread = null;
@@ -89,57 +103,60 @@ public class RemoteService extends Service {
                     updateNotif("connecting...");
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
-                    protocol.sendRemoteStart(); // field4 wire2, required by this device
+                    // Do NOT send RemoteStart — the TV sends it to us
                     updateNotif("connected " + currentHost);
 
-                    // Keepalive on a dedicated thread — never blocks the read loop
+                    // Dedicated keepalive thread
                     final RemoteProtocol kaProto = protocol;
                     kaThread = new Thread(() -> {
                         while (!Thread.currentThread().isInterrupted()) {
                             try {
                                 Thread.sleep(5000);
                                 kaProto.sendKeepalive();
-                            } catch (InterruptedException ie) {
-                                break;
-                            } catch (Exception e) {
-                                break;
-                            }
+                            } catch (InterruptedException ie) { break; }
+                            catch (Exception e) { break; }
                         }
                     }, "KeepaliveThread");
                     kaThread.setDaemon(true);
                     kaThread.start();
 
-                    // Read loop — pure blocking
+                    // Read loop — pure blocking, no socket timeout
                     while (running && !Thread.currentThread().isInterrupted()) {
                         byte[] m = protocol.readRemoteMessage();
                         int fn = protocol.parseOuterFieldNumber(m);
+                        Log.d(TAG, "<- field " + fn + " len=" + m.length);
                         if (fn == 1) {
-                            // remote_configure: TV requests handshake, respond with our config
+                            // remote_configure: TV announces its features, we reply with ours
                             protocol.sendConfigureResponse();
                         } else if (fn == 2) {
-                            // remote_set_active: TV activates session
+                            // remote_set_active: TV activates the session
                             protocol.sendSetActiveResponse();
                         } else if (fn == 8) {
-                            // remote_ping_request (field 8, tag=0x42)
-                            // respond with remote_ping_response (field 9)
+                            // remote_ping_request: TV expects a pong within ~5s or disconnects
                             protocol.sendPingResponse(protocol.parsePingValue(m));
+                        } else if (fn == 40) {
+                            // remote_start: TV tells us its power state. No reply needed.
+                            Log.d(TAG, "remote_start received");
                         }
+                        // fn==9 = ping response we sent (ignore)
+                        // fn==50 = volume info (ignore for now)
                     }
                 } catch (Exception e) {
                     if (!running || intentionalStop) break;
-                    Log.w(TAG, "conn: " + e.getMessage());
+                    Log.w(TAG, "conn error: " + e.getMessage());
                     closeProtocol();
                     updateNotif("reconnecting...");
-                    try { Thread.sleep(RECONNECT_MS); } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt(); break;
-                    }
+                    try { Thread.sleep(RECONNECT_MS); }
+                    catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
                 } finally {
                     if (kaThread != null) kaThread.interrupt();
                 }
             }
-            closeProtocol(); updateNotif("not connected");
+            closeProtocol();
+            updateNotif("not connected");
         }, "ConnThread");
-        connThread.setDaemon(true); connThread.start();
+        connThread.setDaemon(true);
+        connThread.start();
     }
 
     public void sendKey(int kc) {
@@ -158,21 +175,29 @@ public class RemoteService extends Service {
         if (connThread != null) { connThread.interrupt(); connThread = null; }
         closeProtocol();
     }
+
     private void closeProtocol() {
-        RemoteProtocol p = protocol; protocol = null;
+        RemoteProtocol p = protocol;
+        protocol = null;
         if (p != null) try { p.close(); } catch (Exception ignored) {}
     }
+
     private void updateNotif(String t) { postForeground(t); }
+
     private void postForeground(String text) {
         Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Selcom Remote").setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_send).setOngoing(true).build();
         if (Build.VERSION.SDK_INT >= 29)
             startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        else startForeground(NOTIF_ID, n);
+        else
+            startForeground(NOTIF_ID, n);
     }
+
     private void createChannel() {
-        NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Selcom Remote", NotificationManager.IMPORTANCE_LOW);
-        ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(ch);
+        NotificationChannel ch = new NotificationChannel(
+            CHANNEL_ID, "Selcom Remote", NotificationManager.IMPORTANCE_LOW);
+        ((NotificationManager) getSystemService(NOTIFICATION_SERVICE))
+            .createNotificationChannel(ch);
     }
 }
