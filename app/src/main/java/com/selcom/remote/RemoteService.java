@@ -4,6 +4,7 @@ import android.content.*;
 import android.content.pm.ServiceInfo;
 import android.os.*;
 import android.util.Log;
+import android.widget.Toast;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
@@ -27,6 +28,7 @@ public class RemoteService extends Service {
     private volatile boolean running = false;
     private volatile boolean intentionalStop = false;
     private volatile String currentHost;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private final BroadcastReceiver keyReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context ctx, Intent intent) {
@@ -132,21 +134,25 @@ public class RemoteService extends Service {
         connThread.start();
     }
 
+    private void toast(final String msg) {
+        mainHandler.post(() -> Toast.makeText(RemoteService.this, msg, Toast.LENGTH_SHORT).show());
+    }
+
     public void sendKey(int kc) {
         RemoteProtocol p = protocol;
         if (p == null) {
-            updateNotif("DBG: protocol=null kc=" + kc);
+            toast("null proto kc=" + kc);
             return;
         }
         if (!p.isConnected()) {
-            updateNotif("DBG: not connected kc=" + kc);
+            toast("not connected kc=" + kc);
             return;
         }
         try {
             p.sendKeyCode(kc);
-            updateNotif("DBG: sent kc=" + kc);
+            toast("sent kc=" + kc);
         } catch (Exception e) {
-            updateNotif("DBG: ERR " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            toast("ERR " + e.getClass().getSimpleName() + ": " + e.getMessage());
             Log.e(TAG, "sendKey", e);
         }
     }
