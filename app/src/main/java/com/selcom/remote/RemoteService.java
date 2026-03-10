@@ -13,14 +13,14 @@ public class RemoteService extends Service {
     private static final int NOTIF_ID = 1;
     private static final int RECONNECT_MS = 3000;
 
-    public static final String ACTION_SEND_KEY  = "com.selcom.remote.SEND_KEY";
-    public static final String ACTION_CONNECT   = "com.selcom.remote.CONNECT";
-    public static final String ACTION_DISCONNECT= "com.selcom.remote.DISCONNECT";
-    public static final String EXTRA_KEY_CODE   = "key_code";
-    public static final String EXTRA_HOST       = "host";
-    public static final String PREF_FILE        = "selcom_remote";
-    public static final String PREF_HOST        = "paired_host";
-    public static final String PREF_PAIRED      = "is_paired";
+    public static final String ACTION_SEND_KEY   = "com.selcom.remote.SEND_KEY";
+    public static final String ACTION_CONNECT    = "com.selcom.remote.CONNECT";
+    public static final String ACTION_DISCONNECT = "com.selcom.remote.DISCONNECT";
+    public static final String EXTRA_KEY_CODE    = "key_code";
+    public static final String EXTRA_HOST        = "host";
+    public static final String PREF_FILE         = "selcom_remote";
+    public static final String PREF_HOST         = "paired_host";
+    public static final String PREF_PAIRED       = "is_paired";
 
     private volatile RemoteProtocol protocol;
     private Thread connThread;
@@ -103,7 +103,8 @@ public class RemoteService extends Service {
                     updateNotif("connecting...");
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
-                    // Do NOT send RemoteStart — the TV sends it to us
+                    // NOTE: Do NOT send anything here.
+                    // The TV initiates the handshake: configure -> set_active -> start
                     updateNotif("connected " + currentHost);
 
                     // Dedicated keepalive thread
@@ -120,26 +121,20 @@ public class RemoteService extends Service {
                     kaThread.setDaemon(true);
                     kaThread.start();
 
-                    // Read loop — pure blocking, no socket timeout
+                    // Pure blocking read loop — no socket timeout
                     while (running && !Thread.currentThread().isInterrupted()) {
                         byte[] m = protocol.readRemoteMessage();
                         int fn = protocol.parseOuterFieldNumber(m);
                         Log.d(TAG, "<- field " + fn + " len=" + m.length);
                         if (fn == 1) {
-                            // remote_configure: TV announces its features, we reply with ours
                             protocol.sendConfigureResponse();
                         } else if (fn == 2) {
-                            // remote_set_active: TV activates the session
                             protocol.sendSetActiveResponse();
                         } else if (fn == 8) {
-                            // remote_ping_request: TV expects a pong within ~5s or disconnects
                             protocol.sendPingResponse(protocol.parsePingValue(m));
                         } else if (fn == 40) {
-                            // remote_start: TV tells us its power state. No reply needed.
-                            Log.d(TAG, "remote_start received");
+                            Log.d(TAG, "remote_start received — session active");
                         }
-                        // fn==9 = ping response we sent (ignore)
-                        // fn==50 = volume info (ignore for now)
                     }
                 } catch (Exception e) {
                     if (!running || intentionalStop) break;
