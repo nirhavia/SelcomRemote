@@ -95,7 +95,6 @@ public class RemoteService extends Service {
         if (connThread != null) connThread.interrupt();
         running = true;
         intentionalStop = false;
-
         connThread = new Thread(() -> {
             while (running && !Thread.currentThread().isInterrupted()) {
                 try {
@@ -103,33 +102,23 @@ public class RemoteService extends Service {
                     protocol = new RemoteProtocol();
                     protocol.connectForRemote(currentHost);
                     updateNotif("connected " + currentHost);
-
-                    // Pure blocking read loop.
-                    // Keepalive = responding to TV's ping_request (fn==8) with ping_response (fn==9).
-                    // No separate keepalive thread needed.
                     while (running && !Thread.currentThread().isInterrupted()) {
                         byte[] m = protocol.readRemoteMessage();
                         int fn = protocol.parseOuterFieldNumber(m);
                         Log.d(TAG, "<- fn=" + fn + " len=" + m.length);
                         if (fn == 1) {
-                            // remote_configure: TV announces supported features, we reply with ours
                             protocol.sendConfigureResponse();
                         } else if (fn == 2) {
-                            // remote_set_active: echo active features
                             protocol.sendSetActiveResponse();
                         } else if (fn == 8) {
-                            // remote_ping_request: must respond within ~5s or TV disconnects us
                             protocol.sendPingResponse(protocol.parsePingValue(m));
                         } else if (fn == 40) {
-                            // remote_start: TV power state notification, no response needed
-                            Log.d(TAG, "remote_start — session established");
+                            Log.d(TAG, "remote_start received");
                         }
-                        // fn==9 = our ping response echoed back (ignore)
-                        // fn==50/51 = volume info (ignore)
                     }
                 } catch (Exception e) {
                     if (!running || intentionalStop) break;
-                    Log.w(TAG, "conn error: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                    Log.w(TAG, "conn: " + e.getClass().getSimpleName() + ": " + e.getMessage());
                     closeProtocol();
                     updateNotif("reconnecting...");
                     try { Thread.sleep(RECONNECT_MS); }
@@ -161,8 +150,7 @@ public class RemoteService extends Service {
     }
 
     private void closeProtocol() {
-        RemoteProtocol p = protocol;
-        protocol = null;
+        RemoteProtocol p = protocol; protocol = null;
         if (p != null) try { p.close(); } catch (Exception ignored) {}
     }
 
