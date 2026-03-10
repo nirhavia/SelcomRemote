@@ -69,24 +69,30 @@ public class RemoteProtocol implements Closeable {
             + "058e8cab69b6042c3c71f73909d504d615d3786bd07f93b33e3d7333ce5f7d5b80f7610be1e9fe0b"
             + "69963ba758157b8088098f667ce1f8";
 
-    // RemoteMessage { remote_configure { code1=3, device_info { unknown1=1, unknown2="1",
+    // RemoteMessage { remote_configure { code1=615, device_info { unknown1=1, unknown2="1",
     //   package_name="atvremote", app_version="1.0.0" } } }
-    // code1=3 = Feature.PING(1)|Feature.KEY(2)
-    // Outer: field1 wire2 = 0x0A
+    // 615 = PING(1)|KEY(2)|IME(4)|POWER(32)|VOLUME(64)|APP_LINK(512) — matches tronikos default
+    // code1 varint 615: 615 = 0x267 → [0xE7, 0x04]
+    // outer len = 4 + device_info_len
+    // device_info: unknown1(2) + unknown2(3) + pkg(11) + ver(7) = 23 bytes
+    // device_info field: tag(0x12) + len(0x17) + 23 = 25 bytes
+    // code1: tag(0x08) + varint615(0xE7,0x04) = 3 bytes
+    // outer body = 3 + 25 = 28 bytes
+    // outer: tag(0x0A) + len(0x1C=28) + 28 = 30 bytes total
     private static final byte[] CONFIGURE_RESPONSE = {
-        0x0A, 0x1B,
-          0x08, 0x03,
-          0x12, 0x17,
-            0x18, 0x01,
-            0x22, 0x01, 0x31,
-            0x2A, 0x09, 0x61,0x74,0x76,0x72,0x65,0x6D,0x6F,0x74,0x65,
-            0x32, 0x05, 0x31,0x2E,0x30,0x2E,0x30
+        0x0A, 0x1C,                          // field1 wire2, len=28
+          0x08, (byte)0xE7, 0x04,            // code1 = 615 (varint)
+          0x12, 0x17,                        // field2 wire2, len=23
+            0x18, 0x01,                      // unknown1 = 1
+            0x22, 0x01, 0x31,                // unknown2 = "1"
+            0x2A, 0x09, 0x61,0x74,0x76,0x72,0x65,0x6D,0x6F,0x74,0x65, // "atvremote"
+            0x32, 0x05, 0x31,0x2E,0x30,0x2E,0x30  // "1.0.0"
     };
 
-    // RemoteMessage { remote_set_active { active=3 } }
-    // field2 wire2 = 0x12
+    // RemoteMessage { remote_set_active { active=615 } }
+    // field2 wire2: tag=0x12, len=3, inner: field1 varint 615 = [0x08, 0xE7, 0x04]
     private static final byte[] SET_ACTIVE_RESPONSE = {
-        0x12, 0x02, 0x08, 0x03
+        0x12, 0x03, 0x08, (byte)0xE7, 0x04
     };
 
     private SSLSocket sock;
@@ -185,53 +191,37 @@ public class RemoteProtocol implements Closeable {
         sock.setEnabledCipherSuites(sock.getSupportedCipherSuites());
         sock.connect(new InetSocketAddress(host, PORT_REMOTE), 5000);
         sock.startHandshake();
-        // No setSoTimeout — keepalive runs on its own thread
         in = sock.getInputStream();
         out = sock.getOutputStream();
         Log.d(TAG, "Remote TLS OK");
-        // NOTE: Do NOT send RemoteStart — the TV sends it to us
+        // Do NOT send anything — TV initiates the handshake
     }
 
     public void sendConfigureResponse() throws Exception {
         sendMsg(CONFIGURE_RESPONSE);
-        Log.d(TAG, "-> ConfigureResponse");
+        Log.d(TAG, "-> ConfigureResponse (code1=615)");
     }
 
     public void sendSetActiveResponse() throws Exception {
         sendMsg(SET_ACTIVE_RESPONSE);
-        Log.d(TAG, "-> SetActiveResponse");
+        Log.d(TAG, "-> SetActiveResponse (active=615)");
     }
 
     public synchronized void sendKeyCode(int kc) throws Exception {
         // RemoteMessage { remote_key_inject { key_code=kc, direction=SHORT(3) } }
-        // remote_key_inject = field 10 wire2: tag=(10<<3)|2=82=0x52
-        // inner: key_code=field1 varint kc, direction=field2 varint 3
+        // remote_key_inject = field 10, tag=(10<<3)|2=82=0x52
         sendMsg(new byte[]{0x52, 0x04, 0x08, (byte) kc, 0x10, 0x03});
     }
 
-    public void sendKeepalive() throws Exception {
-        // RemoteSetActive field6 varint — sent RAW, no length prefix
-        synchronized (outLock) {
-            out.write(new byte[]{48, 1});
-            out.flush();
-        }
-    }
-
-    // Respond to remote_ping_request (field 8) with remote_ping_response (field 9)
-    // Both sent WITH length prefix via sendMsg
+    // Respond to remote_ping_request (field 8, tag=0x42) with remote_ping_response (field 9, tag=0x4A)
     public void sendPingResponse(int v) throws Exception {
-        // RemoteMessage { remote_ping_response { val1=v } }
-        // field9 wire2: tag=(9<<3)|2=74=0x4A
         sendMsg(new byte[]{0x4A, 0x02, 0x08, (byte) v});
     }
 
     public byte[] readRemoteMessage() throws Exception { return readMsg(); }
 
-    /**
-     * Parse the field number from the first tag varint of a protobuf message.
-     * Works for field numbers > 15 (multi-byte varint tags).
-     * Returns -1 for empty/null.
-     */
+    // Decode the field number from the first varint tag of a protobuf message.
+    // Handles multi-byte tags correctly (e.g. field 40 = 2-byte varint).
     public int parseOuterFieldNumber(byte[] d) {
         if (d == null || d.length == 0) return -1;
         int tag = 0, shift = 0;
@@ -241,20 +231,14 @@ public class RemoteProtocol implements Closeable {
             shift += 7;
             if ((b & 0x80) == 0) break;
         }
-        return tag >>> 3;  // field number = tag >> 3
+        return tag >>> 3;
     }
 
-    // Parse val1 from a message whose first field is an int32
-    // Works for both ping_request (field8 wire2, inner field1 varint)
-    // d = [tag_byte(s)..., len, 0x08, val]
+    // Parse val1 from remote_ping_request: skip outer tag varint, skip len byte, skip 0x08, read value
     public int parsePingValue(byte[] d) {
-        // find end of outer tag varint, then skip length byte, then read inner varint
         int i = 0;
-        // skip outer tag varint
         while (i < d.length && (d[i] & 0x80) != 0) i++;
-        i++; // past last tag byte
-        i++; // skip length byte
-        i++; // skip inner field tag (0x08)
+        i++; i++; i++; // past tag, len, inner tag
         return (i < d.length) ? (d[i] & 0x7F) : 0;
     }
 
@@ -269,12 +253,13 @@ public class RemoteProtocol implements Closeable {
     }
 
     private byte[] readMsg() throws Exception {
-        int len = in.read() & 0xFF;
+        int len = in.read();
+        if (len < 0) throw new EOFException("stream closed");
         byte[] buf = new byte[len];
         int r = 0;
         while (r < len) {
             int n = in.read(buf, r, len - r);
-            if (n < 0) throw new EOFException();
+            if (n < 0) throw new EOFException("stream closed mid-msg");
             r += n;
         }
         return buf;
