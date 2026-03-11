@@ -19,6 +19,7 @@
     </LinearLayout>
     <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
         <Button android:id="@+id/w_btn_last_ch" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="קודם" android:textSize="16sp" android:textColor="#ffffff" android:backgroundTint="#6c3483" android:layout_margin="2dp"/>
-        <Button android:id="@+id/w_btn_0" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2" android:text="0" android:textSize="22sp" android:textColor="#ffffff" android:backgroundTint="#16213e" android:layout_margin="2dp"/>
+        <Button android:id="@+id/w_btn_0" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="0" android:textSize="22sp" android:textColor="#ffffff" android:backgroundTint="#16213e" android:layout_margin="2dp"/>
+        <Button android:id="@+id/w_btn_back" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="◄" android:textSize="20sp" android:textColor="#ffffff" android:backgroundTint="#1a6b3c" android:layout_margin="2dp"/>
     </LinearLayout>
 </LinearLayout>
