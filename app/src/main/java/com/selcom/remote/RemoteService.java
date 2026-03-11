@@ -4,7 +4,6 @@ import android.content.*;
 import android.content.pm.ServiceInfo;
 import android.os.*;
 import android.util.Log;
-import android.widget.Toast;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
@@ -28,7 +27,6 @@ public class RemoteService extends Service {
     private volatile boolean running = false;
     private volatile boolean intentionalStop = false;
     private volatile String currentHost;
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private final BroadcastReceiver keyReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context ctx, Intent intent) {
@@ -134,27 +132,22 @@ public class RemoteService extends Service {
         connThread.start();
     }
 
-    private void toast(final String msg) {
-        mainHandler.post(() -> Toast.makeText(RemoteService.this, msg, Toast.LENGTH_SHORT).show());
-    }
-
+    // sendKey must NOT run on the main thread — network I/O is forbidden there.
+    // We dispatch to a short-lived background thread.
     public void sendKey(int kc) {
-        RemoteProtocol p = protocol;
-        if (p == null) {
-            toast("null proto kc=" + kc);
-            return;
-        }
-        if (!p.isConnected()) {
-            toast("not connected kc=" + kc);
-            return;
-        }
-        try {
-            p.sendKeyCode(kc);
-            toast("sent kc=" + kc);
-        } catch (Exception e) {
-            toast("ERR " + e.getClass().getSimpleName() + ": " + e.getMessage());
-            Log.e(TAG, "sendKey", e);
-        }
+        new Thread(() -> {
+            RemoteProtocol p = protocol;
+            if (p == null || !p.isConnected()) {
+                Log.w(TAG, "sendKey: not connected, kc=" + kc);
+                return;
+            }
+            try {
+                p.sendKeyCode(kc);
+                Log.d(TAG, "sendKey: sent kc=" + kc);
+            } catch (Exception e) {
+                Log.e(TAG, "sendKey kc=" + kc, e);
+            }
+        }).start();
     }
 
     public boolean isConnected() { return protocol != null && protocol.isConnected(); }
