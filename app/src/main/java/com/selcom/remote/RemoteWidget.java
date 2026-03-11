@@ -13,10 +13,12 @@ public class RemoteWidget extends AppWidgetProvider {
     public static void updateWidget(Context ctx,AppWidgetManager mgr,int id){
         RemoteViews views=new RemoteViews(ctx.getPackageName(),R.layout.widget_remote);
         int[] btnIds={R.id.w_btn_1,R.id.w_btn_2,R.id.w_btn_3,R.id.w_btn_4,R.id.w_btn_5,
-            R.id.w_btn_6,R.id.w_btn_7,R.id.w_btn_8,R.id.w_btn_9,R.id.w_btn_0,R.id.w_btn_last_ch};
+            R.id.w_btn_6,R.id.w_btn_7,R.id.w_btn_8,R.id.w_btn_9,R.id.w_btn_0,
+            R.id.w_btn_last_ch,R.id.w_btn_back};
         int[] kcs={KeyCodes.KEYCODE_1,KeyCodes.KEYCODE_2,KeyCodes.KEYCODE_3,KeyCodes.KEYCODE_4,
             KeyCodes.KEYCODE_5,KeyCodes.KEYCODE_6,KeyCodes.KEYCODE_7,KeyCodes.KEYCODE_8,
-            KeyCodes.KEYCODE_9,KeyCodes.KEYCODE_0,KeyCodes.KEYCODE_LAST_CHANNEL};
+            KeyCodes.KEYCODE_9,KeyCodes.KEYCODE_0,
+            KeyCodes.KEYCODE_LAST_CHANNEL,KeyCodes.KEYCODE_BACK};
         for(int i=0;i<btnIds.length;i++){
             Intent intent=new Intent(ctx,RemoteWidget.class).setAction(ACTION_WIDGET_KEY)
                 .putExtra(EXTRA_KEY_CODE,kcs[i]).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,id);
