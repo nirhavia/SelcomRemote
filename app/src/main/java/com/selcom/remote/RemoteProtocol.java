@@ -69,28 +69,16 @@ public class RemoteProtocol implements Closeable {
             + "058e8cab69b6042c3c71f73909d504d615d3786bd07f93b33e3d7333ce5f7d5b80f7610be1e9fe0b"
             + "69963ba758157b8088098f667ce1f8";
 
-    // RemoteMessage { remote_configure { code1=615, device_info { unknown1=1, unknown2="1",
-    //   package_name="atvremote", app_version="1.0.0" } } }
-    // 615 = PING(1)|KEY(2)|IME(4)|POWER(32)|VOLUME(64)|APP_LINK(512) — matches tronikos default
-    // code1 varint 615: 615 = 0x267 → [0xE7, 0x04]
-    // outer len = 4 + device_info_len
-    // device_info: unknown1(2) + unknown2(3) + pkg(11) + ver(7) = 23 bytes
-    // device_info field: tag(0x12) + len(0x17) + 23 = 25 bytes
-    // code1: tag(0x08) + varint615(0xE7,0x04) = 3 bytes
-    // outer body = 3 + 25 = 28 bytes
-    // outer: tag(0x0A) + len(0x1C=28) + 28 = 30 bytes total
     private static final byte[] CONFIGURE_RESPONSE = {
-        0x0A, 0x1C,                          // field1 wire2, len=28
-          0x08, (byte)0xE7, 0x04,            // code1 = 615 (varint)
-          0x12, 0x17,                        // field2 wire2, len=23
-            0x18, 0x01,                      // unknown1 = 1
-            0x22, 0x01, 0x31,                // unknown2 = "1"
-            0x2A, 0x09, 0x61,0x74,0x76,0x72,0x65,0x6D,0x6F,0x74,0x65, // "atvremote"
-            0x32, 0x05, 0x31,0x2E,0x30,0x2E,0x30  // "1.0.0"
+        0x0A, 0x1C,
+          0x08, (byte)0xE7, 0x04,
+          0x12, 0x17,
+            0x18, 0x01,
+            0x22, 0x01, 0x31,
+            0x2A, 0x09, 0x61,0x74,0x76,0x72,0x65,0x6D,0x6F,0x74,0x65,
+            0x32, 0x05, 0x31,0x2E,0x30,0x2E,0x30
     };
 
-    // RemoteMessage { remote_set_active { active=615 } }
-    // field2 wire2: tag=0x12, len=3, inner: field1 varint 615 = [0x08, 0xE7, 0x04]
     private static final byte[] SET_ACTIVE_RESPONSE = {
         0x12, 0x03, 0x08, (byte)0xE7, 0x04
     };
@@ -138,7 +126,6 @@ public class RemoteProtocol implements Closeable {
         sock.startHandshake();
         in = sock.getInputStream();
         out = sock.getOutputStream();
-        Log.d(TAG, "Pairing TLS OK");
     }
 
     public void sendPairingRequest() throws Exception {
@@ -193,35 +180,53 @@ public class RemoteProtocol implements Closeable {
         sock.startHandshake();
         in = sock.getInputStream();
         out = sock.getOutputStream();
-        Log.d(TAG, "Remote TLS OK");
-        // Do NOT send anything — TV initiates the handshake
     }
 
     public void sendConfigureResponse() throws Exception {
         sendMsg(CONFIGURE_RESPONSE);
-        Log.d(TAG, "-> ConfigureResponse (code1=615)");
     }
 
     public void sendSetActiveResponse() throws Exception {
         sendMsg(SET_ACTIVE_RESPONSE);
-        Log.d(TAG, "-> SetActiveResponse (active=615)");
     }
 
+    /**
+     * Send a key inject message.
+     * RemoteMessage { remote_key_inject { key_code=kc, direction=SHORT(3) } }
+     * remote_key_inject = field 10, tag = (10<<3)|2 = 0x52
+     * Inner fields: key_code = field1 varint, direction = field2 varint 3
+     * IMPORTANT: key_code must be encoded as a proper varint (multi-byte for values > 127)
+     */
     public synchronized void sendKeyCode(int kc) throws Exception {
-        // RemoteMessage { remote_key_inject { key_code=kc, direction=SHORT(3) } }
-        // remote_key_inject = field 10, tag=(10<<3)|2=82=0x52
-        sendMsg(new byte[]{0x52, 0x04, 0x08, (byte) kc, 0x10, 0x03});
+        ByteArrayOutputStream inner = new ByteArrayOutputStream();
+        inner.write(0x08);          // field1 varint tag
+        writeVarint(inner, kc);     // key_code as proper varint
+        inner.write(0x10);          // field2 varint tag
+        inner.write(0x03);          // direction=SHORT
+        byte[] body = inner.toByteArray();
+        ByteArrayOutputStream msg = new ByteArrayOutputStream();
+        msg.write(0x52);            // remote_key_inject tag
+        writeVarint(msg, body.length);
+        msg.write(body);
+        sendMsg(msg.toByteArray());
+        Log.d(TAG, "-> sendKeyCode kc=" + kc);
     }
 
-    // Respond to remote_ping_request (field 8, tag=0x42) with remote_ping_response (field 9, tag=0x4A)
+    /** Encode a non-negative integer as a protobuf varint into the stream. */
+    private static void writeVarint(ByteArrayOutputStream out, int v) {
+        while (v > 127) {
+            out.write((v & 0x7F) | 0x80);
+            v >>>= 7;
+        }
+        out.write(v);
+    }
+
     public void sendPingResponse(int v) throws Exception {
         sendMsg(new byte[]{0x4A, 0x02, 0x08, (byte) v});
     }
 
     public byte[] readRemoteMessage() throws Exception { return readMsg(); }
 
-    // Decode the field number from the first varint tag of a protobuf message.
-    // Handles multi-byte tags correctly (e.g. field 40 = 2-byte varint).
     public int parseOuterFieldNumber(byte[] d) {
         if (d == null || d.length == 0) return -1;
         int tag = 0, shift = 0;
@@ -234,11 +239,10 @@ public class RemoteProtocol implements Closeable {
         return tag >>> 3;
     }
 
-    // Parse val1 from remote_ping_request: skip outer tag varint, skip len byte, skip 0x08, read value
     public int parsePingValue(byte[] d) {
         int i = 0;
         while (i < d.length && (d[i] & 0x80) != 0) i++;
-        i++; i++; i++; // past tag, len, inner tag
+        i++; i++; i++;
         return (i < d.length) ? (d[i] & 0x7F) : 0;
     }
 
